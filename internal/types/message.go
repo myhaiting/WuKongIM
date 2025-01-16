@@ -34,9 +34,9 @@ func (m *MessageResp) From(messageD wkdb.Message, systemUid string) {
 
 	fromUid := messageD.FromUID
 
-	if fromUid == systemUid {
-		fromUid = ""
-	}
+	//if fromUid == systemUid {
+	//	fromUid = ""
+	//}
 
 	m.Header.NoPersist = wkutil.BoolToInt(messageD.NoPersist)
 	m.Header.RedDot = wkutil.BoolToInt(messageD.RedDot)

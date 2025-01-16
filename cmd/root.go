@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -143,6 +144,19 @@ func cmdRun() error {
 				log.Fatal(err)
 			}
 		}
+
+		stop := make(chan os.Signal, 1)
+		signal.Notify(stop, os.Interrupt)
+
+		go func() {
+			for {
+				select {
+				case <-stop:
+					s.Stop()
+					os.Exit(0)
+				}
+			}
+		}()
 
 		select {}
 

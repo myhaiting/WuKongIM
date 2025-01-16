@@ -39,7 +39,10 @@ demo:
 #tmpChannel:
 #  suffix: "@tmp" # 临时频道后缀 带有此后缀的频道将被认为是临时频道，临时频道不会被持久化
 #  cacheCount: 500 # 临时频道缓存数量
-#webhook: # 两者配其一即可 webhook配置 用于接收消息通知事件，详情请查看文档
+registry:
+ serviceName: "wukongim"
+webhook: # 两者配其一即可 webhook配置 用于接收消息通知事件，详情请查看文档
+ mqAddr: "amqp://guest:guest@localhost:5672/"
 #  httpAddr: "" # webhook的http地址 通过此地址通知数据给第三方 地址为你提供的api接口地址
 #  grpcAddr: "" #  webhook的grpc地址 当前httpAddr成为瓶颈的时候可以用grpc进行推送， 如果此地址有值 则不会再调用httpAddr配置的地址,格式为 ip:port，通讯协议请查看文档
 #  msgNotifyEventPushInterval: 500ms # 消息通知事件推送间隔，默认500毫秒发起一次推送
@@ -49,8 +52,8 @@ demo:
 #   - "msg.offline"
 #   - "msg.notify"
 #   - "user.onlinestatus"
-#datasource: #  数据源配置，不填写则使用自身数据存储逻辑，如果填写则使用第三方数据源，数据格式请查看文档
-#  addr: "" #  数据源地址
+datasource: #  数据源配置，不填写则使用自身数据存储逻辑，如果填写则使用第三方数据源，数据格式请查看文档
+  addr: "http://go-fly-api/v1/datasource" #  数据源地址
 #  channelInfoOn: false #  是否开启频道信息数据源的获取
 conversation: # 最近会话配置
   on: true # 是否开启最近会话

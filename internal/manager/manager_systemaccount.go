@@ -3,6 +3,7 @@ package manager
 import (
 	"errors"
 	"fmt"
+	"github.com/WuKongIM/WuKongIM/internal/datasource"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -20,14 +21,16 @@ import (
 type SystemAccountManager struct {
 	systemUIDs sync.Map
 	loaded     atomic.Bool
+	ds         datasource.IDatasource
 	wklog.Log
 }
 
 // SystemAccountManager SystemAccountManager
-func NewSystemAccountManager() *SystemAccountManager {
+func NewSystemAccountManager(ds datasource.IDatasource) *SystemAccountManager {
 
 	return &SystemAccountManager{
 		systemUIDs: sync.Map{},
+		ds:         ds,
 		Log:        wklog.NewWKLog("SystemUIDManager"),
 	}
 }
@@ -152,32 +155,9 @@ func (s *SystemAccountManager) requestSystemUids(nodeInfo *types.Node) ([]string
 
 // getSystemUIDsFromDatasource 获取系统账号从数据源
 func (s *SystemAccountManager) getSystemUIDsFromDatasource() ([]string, error) {
-	result, err := s.requestCMD("getSystemUIDs", map[string]interface{}{})
+	result, err := s.ds.GetSystemUIDs()
 	if err != nil {
 		return nil, err
 	}
-	var uids []string
-	err = wkutil.ReadJSONByByte([]byte(result), &uids)
-	if err != nil {
-		return nil, err
-	}
-	return uids, nil
-}
-
-func (s *SystemAccountManager) requestCMD(cmd string, param map[string]interface{}) (string, error) {
-	dataMap := map[string]interface{}{
-		"cmd": cmd,
-	}
-	if param != nil {
-		dataMap["data"] = param
-	}
-	resp, err := network.Post(options.G.Datasource.Addr, []byte(wkutil.ToJSON(dataMap)), nil)
-	if err != nil {
-		return "", err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("http状态码错误！[%d]", resp.StatusCode)
-	}
-
-	return resp.Body, nil
+	return result, nil
 }

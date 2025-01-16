@@ -7,6 +7,7 @@ require (
 	github.com/WuKongIM/WuKongIMGoProto v1.0.8
 	github.com/WuKongIM/crypto v0.0.0-20240416072338-b872b70b395f
 	github.com/bwmarrin/snowflake v0.3.0
+	github.com/cloudwego/hertz v0.7.3
 	github.com/cockroachdb/pebble v1.0.0
 	github.com/gin-contrib/gzip v0.0.6
 	github.com/gin-contrib/pprof v1.4.0
@@ -17,12 +18,15 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/grafana/dskit v0.0.0-20240905221822-931a021fb06b
 	github.com/grafana/loki/v3 v3.2.1
+	github.com/hertz-contrib/registry/nacos/v2 v2.0.0-20240618152458-11c3cac90e4f
 	github.com/lni/goutils v1.3.1-0.20220604063047-388d67b4dbc4
+	github.com/makasim/amqpextra v1.2.1
 	github.com/panjf2000/ants/v2 v2.10.0
 	github.com/panjf2000/gnet/v2 v2.6.3
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.19.1
 	github.com/prometheus/common v0.55.0
+	github.com/rabbitmq/amqp091-go v1.5.0
 	github.com/sasha-s/go-deadlock v0.3.1
 	github.com/sendgrid/rest v2.6.9+incompatible
 	github.com/stretchr/testify v1.9.0
@@ -43,8 +47,26 @@ require (
 )
 
 require (
+	github.com/aliyun/alibaba-cloud-sdk-go v1.61.1704 // indirect
+	github.com/buger/jsonparser v1.1.1 // indirect
+	github.com/bytedance/go-tagexpr/v2 v2.9.2 // indirect
+	github.com/bytedance/gopkg v0.0.0-20220413063733-65bf48ffb3a7 // indirect
+	github.com/bytedance/sonic v1.8.1 // indirect
+	github.com/chenzhuoyu/base64x v0.0.0-20221115062448-fe3a3abad311 // indirect
+	github.com/cloudwego/netpoll v0.5.0 // indirect
+	github.com/golang/mock v1.6.0 // indirect
+	github.com/henrylee2cn/ameda v1.4.10 // indirect
+	github.com/henrylee2cn/goutil v0.0.0-20210127050712-89660552f6f8 // indirect
+	github.com/klauspost/cpuid/v2 v2.2.8 // indirect
+	github.com/nacos-group/nacos-sdk-go/v2 v2.2.0 // indirect
+	github.com/nyaruka/phonenumbers v1.0.55 // indirect
+	github.com/tidwall/gjson v1.14.4 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.0 // indirect
+	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	go.opentelemetry.io/otel/sdk v1.28.0 // indirect
 	go.opentelemetry.io/otel/trace v1.28.0 // indirect
+	golang.org/x/arch v0.0.0-20210923205945-b76863e36670 // indirect
 )
 
 require (
@@ -279,7 +301,7 @@ require (
 	k8s.io/client-go v0.29.3 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20240228011516-70dd3763d340 // indirect
-	k8s.io/utils v0.0.0-20230726121419-3b25d923346b
+	k8s.io/utils v0.0.0-20230726121419-3b25d923346b // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect

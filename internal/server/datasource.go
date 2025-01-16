@@ -1,38 +1,41 @@
 package server
 
 import (
+	"context"
 	"fmt"
+	"github.com/WuKongIM/WuKongIM/internal/datasource"
+	"github.com/cloudwego/hertz/pkg/app/client"
+	"github.com/cloudwego/hertz/pkg/app/middlewares/client/sd"
+	"github.com/cloudwego/hertz/pkg/common/config"
+	"github.com/cloudwego/hertz/pkg/protocol"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
+	"github.com/hertz-contrib/registry/nacos/v2"
 	"net/http"
 
-	"github.com/WuKongIM/WuKongIM/pkg/network"
 	"github.com/WuKongIM/WuKongIM/pkg/wkdb"
 	"github.com/WuKongIM/WuKongIM/pkg/wkutil"
 )
 
-// IDatasource 数据源第三方应用可以提供
-type IDatasource interface {
-	// 获取订阅者
-	GetSubscribers(channelID string, channelType uint8) ([]string, error)
-	// 获取黑名单
-	GetBlacklist(channelID string, channelType uint8) ([]string, error)
-	// 获取白名单
-	GetWhitelist(channelID string, channelType uint8) ([]string, error)
-	// 获取系统账号的uid集合 系统账号可以给任何人发消息
-	GetSystemUIDs() ([]string, error)
-	// 获取频道信息
-	GetChannelInfo(channelID string, channelType uint8) (wkdb.ChannelInfo, error)
-}
-
 // Datasource Datasource
 type Datasource struct {
 	s *Server
+	c *client.Client
 }
 
 // NewDatasource 创建一个数据源
-func NewDatasource(s *Server) IDatasource {
-
+func NewDatasource(s *Server) datasource.IDatasource {
+	c, err := client.NewClient()
+	if err != nil {
+		panic(err)
+	}
+	r, err := nacos.NewDefaultNacosResolver()
+	if err != nil {
+		panic(err)
+	}
+	c.Use(sd.Discovery(r))
 	return &Datasource{
 		s: s,
+		c: c,
 	}
 }
 
@@ -132,15 +135,29 @@ func (d *Datasource) requestCMD(cmd string, param map[string]interface{}) (strin
 	if param != nil {
 		dataMap["data"] = param
 	}
-	resp, err := network.Post(d.s.opts.Datasource.Addr, []byte(wkutil.ToJSON(dataMap)), nil)
+	resp, err := d.post([]byte(wkutil.ToJSON(dataMap)))
 	if err != nil {
 		return "", err
 	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("http状态码错误！[%d]", resp.StatusCode)
+	if resp.StatusCode() != http.StatusOK {
+		return "", fmt.Errorf("http状态码错误！[%d]", resp.StatusCode())
 	}
 
-	return resp.Body, nil
+	return string(resp.Body()), nil
+}
+
+func (d *Datasource) post(body []byte) (*protocol.Response, error) {
+	req, res := &protocol.Request{}, &protocol.Response{}
+	req.SetMethod(consts.MethodPost)
+	req.SetRequestURI(d.s.opts.Datasource.Addr)
+	req.Header.Add("Content-Type", "application/json")
+	req.SetBody(body)
+	req.SetOptions(config.WithSD(true))
+	err := d.c.Do(context.Background(), req, res)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
 }
 
 type channelInfoResp struct {

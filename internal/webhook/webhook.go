@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/makasim/amqpextra"
+	"github.com/makasim/amqpextra/publisher"
 	"net"
 	"net/http"
 	"strconv"
@@ -23,6 +25,7 @@ import (
 	wkproto "github.com/WuKongIM/WuKongIMGoProto"
 	"github.com/panjf2000/ants/v2"
 	"github.com/pkg/errors"
+	amqp "github.com/rabbitmq/amqp091-go"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -38,6 +41,9 @@ type Webhook struct {
 	onlinestatusLock sync.RWMutex
 	onlinestatusList []string
 	focusEvents      map[string]struct{} // 用户关注的事件类型,如果为空则推送所有类型
+
+	dialer    *amqpextra.Dialer
+	publisher *publisher.Publisher
 }
 
 func New() *Webhook {
@@ -63,6 +69,22 @@ func New() *Webhook {
 
 	}
 
+	// 如果是MQ
+	var (
+		dialer *amqpextra.Dialer
+		pub    *publisher.Publisher
+	)
+	if options.G.WebhookMQOn() {
+		dialer, err = amqpextra.NewDialer(amqpextra.WithURL(options.G.Webhook.MQAddr))
+		if err != nil {
+			panic(err)
+		}
+		pub, err = dialer.Publisher()
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	// 检查用户配置了关注的事件
 	var focusEvents = make(map[string]struct{})
 	if len(options.G.Webhook.FocusEvents) > 0 {
@@ -82,6 +104,8 @@ func New() *Webhook {
 		webhookGRPCPool:  webhookGRPCPool,
 		onlinestatusList: make([]string, 0),
 		stoped:           make(chan struct{}),
+		dialer:           dialer,
+		publisher:        pub,
 		httpClient: &http.Client{
 			Transport: &http.Transport{
 				DialContext: (&net.Dialer{
@@ -144,11 +168,8 @@ func (w *Webhook) TriggerEvent(event *types.Event) {
 			return
 		}
 
-		if options.G.WebhookGRPCOn() {
-			err = w.sendWebhookForGRPC(event.Event, jsonData)
-		} else {
-			err = w.sendWebhookForHttp(event.Event, jsonData)
-		}
+		err = w.sendWebhook(event.Event, jsonData)
+
 		if err != nil {
 			w.Error("请求webhook失败！", zap.Error(err), zap.String("event", event.Event))
 			return
@@ -248,11 +269,8 @@ func (w *Webhook) notifyQueueLoop() {
 					continue
 				}
 
-				if options.G.WebhookGRPCOn() {
-					err = w.sendWebhookForGRPC(types.EventMsgNotify, messageData)
-				} else {
-					err = w.sendWebhookForHttp(types.EventMsgNotify, messageData)
-				}
+				err = w.sendWebhook(types.EventMsgNotify, messageData)
+
 				if err != nil {
 					w.Error("请求所有消息通知webhook失败！", zap.Error(err))
 					errMessageIDs := make([]int64, 0, len(messages))
@@ -328,11 +346,8 @@ func (w *Webhook) loopOnlineStatus() {
 			continue
 		}
 
-		if options.G.WebhookGRPCOn() {
-			err = w.sendWebhookForGRPC(types.EventOnlineStatus, jsonData)
-		} else {
-			err = w.sendWebhookForHttp(types.EventOnlineStatus, jsonData)
-		}
+		err = w.sendWebhook(types.EventOnlineStatus, jsonData)
+
 		if err != nil {
 			errCount++
 			w.Error("请求在线状态webhook失败！", zap.Error(err))
@@ -410,6 +425,31 @@ func (w *Webhook) sendWebhookForGRPC(event string, data []byte) error {
 	}
 	if resp.Status != wkhook.EventStatus_Success {
 		return errors.New("grpc返回状态错误！")
+	}
+	return nil
+}
+
+func (w *Webhook) sendWebhook(event string, data []byte) error {
+	if options.G.WebhookGRPCOn() {
+		return w.sendWebhookForGRPC(event, data)
+	} else if options.G.WebhookMQOn() {
+		return w.sendWebhookForMQ(event, data)
+	} else {
+		return w.sendWebhookForHttp(event, data)
+	}
+}
+
+func (w *Webhook) sendWebhookForMQ(event string, data []byte) error {
+	if err := w.publisher.Publish(publisher.Message{
+		Key: "WK_MESSAGE_QUEUE",
+		Publishing: amqp.Publishing{
+			Headers: amqp.Table{
+				"X-WK-Event": event,
+			},
+			Body: data,
+		},
+	}); err != nil {
+		return err
 	}
 	return nil
 }

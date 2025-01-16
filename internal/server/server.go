@@ -3,7 +3,13 @@ package server
 import (
 	"context"
 	"fmt"
+	"github.com/WuKongIM/WuKongIM/internal/datasource"
+	"github.com/cloudwego/hertz/pkg/app/server/registry"
+	"github.com/cloudwego/hertz/pkg/common/hlog"
+	"github.com/cloudwego/hertz/pkg/common/utils"
+	"github.com/hertz-contrib/registry/nacos/v2"
 	"math/rand"
+	"net"
 	"os"
 	"path"
 	"path/filepath"
@@ -56,10 +62,10 @@ type Server struct {
 	store         *store.Store  // 存储相关接口
 	engine        *wknet.Engine // 长连接引擎
 	// userReactor    *userReactor    // 用户的reactor，用于处理用户的行为逻辑
-	trace      *trace.Trace // 监控
-	demoServer *DemoServer  // demo server
-	datasource IDatasource  // 数据源
-	apiServer  *api.Server  // api服务
+	trace      *trace.Trace           // 监控
+	demoServer *DemoServer            // demo server
+	datasource datasource.IDatasource // 数据源
+	apiServer  *api.Server            // api服务
 	ingress    *ingress.Ingress
 
 	commonService *common.Service // 通用服务
@@ -80,6 +86,8 @@ type Server struct {
 	// push事件池
 	pushHandler   *pusherhandler.Handler
 	pushEventPool *pusherevent.EventPool
+
+	apiRegistry registry.Registry // 注册服务
 }
 
 func New(opts *options.Options) *Server {
@@ -161,7 +169,7 @@ func New(opts *options.Options) *Server {
 	service.ConversationManager = s.conversationManager
 	service.RetryManager = s.retryManager
 	service.TagManager = s.tagManager
-	service.SystemAccountManager = manager.NewSystemAccountManager() // 系统账号管理
+	service.SystemAccountManager = manager.NewSystemAccountManager(s.datasource) // 系统账号管理
 
 	s.commonService = common.NewService()
 	service.CommonService = s.commonService
@@ -217,6 +225,14 @@ func New(opts *options.Options) *Server {
 	})
 
 	s.apiServer = api.New()
+
+	// 注册中心
+	if s.opts.Registry.ServiceName != "" {
+		s.apiRegistry, err = nacos.NewDefaultNacosRegistry()
+		if err != nil {
+			panic(err)
+		}
+	}
 	return s
 }
 
@@ -335,7 +351,39 @@ func (s *Server) Start() error {
 		return err
 	}
 
+	// registry
+	if s.apiRegistry != nil {
+		host := s.opts.Registry.IP
+		if host == "" {
+			host = getLocalIP()
+		}
+		values := strings.Split(s.opts.HTTPAddr, ":")
+		if err = s.apiRegistry.Register(&registry.Info{
+			ServiceName: s.opts.Registry.ServiceName,
+			Addr:        utils.NewNetAddr("tcp", fmt.Sprintf("%s:%s", host, values[1])),
+			Weight:      10,
+		}); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// getLocalIP 获取本机IP
+func getLocalIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		hlog.Error("Error:", err)
+		return ""
+	}
+	for _, addr := range addrs {
+		if ipNet, ok := addr.(*net.IPNet); ok && !ipNet.IP.IsLoopback() {
+			if ipNet.IP.To4() != nil {
+				return ipNet.IP.String()
+			}
+		}
+	}
+	return ""
 }
 
 func (s *Server) StopNoErr() {
@@ -348,6 +396,21 @@ func (s *Server) StopNoErr() {
 func (s *Server) Stop() error {
 
 	s.cancel()
+
+	// deRegistry
+	if s.apiRegistry != nil {
+		host := s.opts.Registry.IP
+		if host == "" {
+			host = getLocalIP()
+		}
+		values := strings.Split(s.opts.HTTPAddr, ":")
+		if err := s.apiRegistry.Deregister(&registry.Info{
+			ServiceName: s.opts.Registry.ServiceName,
+			Addr:        utils.NewNetAddr("tcp", fmt.Sprintf("%s:%s", host, values[1])),
+		}); err != nil {
+			return err
+		}
+	}
 
 	s.userEventPool.Stop()
 

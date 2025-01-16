@@ -69,7 +69,10 @@ type Options struct {
 		CertFile string // 证书文件
 		KeyFile  string // 私钥文件
 	}
-
+	Registry struct {
+		ServiceName string // 服务名称
+		IP          string // IP地址
+	}
 	Logger struct {
 		Dir              string // 日志存储目录
 		Level            zapcore.Level
@@ -119,6 +122,7 @@ type Options struct {
 	Webhook struct { // 两者配其一即可
 		HTTPAddr                    string        // webhook的http地址 通过此地址通知数据给第三方 格式为 http://xxxxx
 		GRPCAddr                    string        //  webhook的grpc地址 如果此地址有值 则不会再调用HttpAddr配置的地址,格式为 ip:port
+		MQAddr                      string        // webhook的rabbitMQ地址
 		MsgNotifyEventPushInterval  time.Duration // 消息通知事件推送间隔，默认500毫秒发起一次推送
 		MsgNotifyEventCountPerPush  int           // 每次webhook消息通知事件推送消息数量限制 默认一次请求最多推送100条
 		MsgNotifyEventRetryMaxCount int           // 消息通知事件消息推送失败最大重试次数 默认为5次，超过将丢弃
@@ -372,6 +376,13 @@ func New(op ...Option) *Options {
 			Suffix:     "@tmp",
 			CacheCount: 500,
 		},
+		Registry: struct {
+			ServiceName string
+			IP          string
+		}{
+			ServiceName: "",
+			IP:          "",
+		},
 		Channel: struct {
 			CacheCount                int
 			CreateIfNoExist           bool
@@ -479,6 +490,7 @@ func New(op ...Option) *Options {
 		Webhook: struct {
 			HTTPAddr                    string
 			GRPCAddr                    string
+			MQAddr                      string
 			MsgNotifyEventPushInterval  time.Duration
 			MsgNotifyEventCountPerPush  int
 			MsgNotifyEventRetryMaxCount int
@@ -755,6 +767,10 @@ func (o *Options) ConfigureWithViper(vp *viper.Viper) {
 
 	o.UnitTest = o.vp.GetBool("unitTest")
 
+	o.Registry.ServiceName = o.getString("registry.serviceName", o.Registry.ServiceName)
+	o.Registry.IP = o.getString("registry.ip", o.Registry.IP)
+
+	o.Webhook.MQAddr = o.getString("webhook.mqAddr", o.Webhook.MQAddr)
 	o.Webhook.GRPCAddr = o.getString("webhook.grpcAddr", o.Webhook.GRPCAddr)
 	o.Webhook.HTTPAddr = o.getString("webhook.httpAddr", o.Webhook.HTTPAddr)
 	o.Webhook.MsgNotifyEventRetryMaxCount = o.getInt("webhook.msgNotifyEventRetryMaxCount", o.Webhook.MsgNotifyEventRetryMaxCount)
@@ -1293,12 +1309,17 @@ func (o *Options) WebhookOn(event string) bool {
 		return false
 	}
 
-	return strings.TrimSpace(o.Webhook.HTTPAddr) != "" || o.WebhookGRPCOn()
+	return strings.TrimSpace(o.Webhook.HTTPAddr) != "" || o.WebhookGRPCOn() || o.WebhookMQOn()
 }
 
 // WebhookGRPCOn 是否配置了webhook grpc地址
 func (o *Options) WebhookGRPCOn() bool {
 	return strings.TrimSpace(o.Webhook.GRPCAddr) != ""
+}
+
+// WebhookMQOn 是否配置了webhook MQ地址
+func (o *Options) WebhookMQOn() bool {
+	return strings.TrimSpace(o.Webhook.MQAddr) != ""
 }
 
 // HasDatasource 是否有配置数据源

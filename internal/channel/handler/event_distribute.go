@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
+	"github.com/spf13/cast"
+	"strings"
 
 	"github.com/WuKongIM/WuKongIM/internal/eventbus"
 	"github.com/WuKongIM/WuKongIM/internal/ingress"
@@ -137,8 +140,28 @@ func (h *Handler) distributeByTag(leaderId uint64, tag *types.Tag, channelId str
 			for _, event := range events {
 
 				if pubshEvents == nil {
-					pubshEvents = make([]*eventbus.Event, 0, len(events)*len(node.Uids))
+					pubshEvents = make([]*eventbus.Event, 0)
 				}
+
+				// 如果是客服频道，并且消息设置为仅客服可见，则不分发给访客
+				// TODO 分发时候忽略访客，但是会话及历史并没有剔除
+				if channelType == wkproto.ChannelTypeCustomerService &&
+					event.Frame.GetFrameType() == wkproto.SEND &&
+					strings.HasPrefix(uid, "V") {
+
+					packet := event.Frame.(*wkproto.SendPacket)
+					var payload map[string]interface{}
+					if err := json.Unmarshal(packet.Payload, &payload); err != nil {
+						h.Warn("json unmarshal payload error", zap.Error(err))
+					} else {
+						// 忽略内部回复
+						replyType, ok := payload["replyType"]
+						if ok && cast.ToInt(replyType) == 2 {
+							continue
+						}
+					}
+				}
+
 				cloneMsg := event.Clone()
 				cloneMsg.ToUid = uid
 				cloneMsg.Type = eventbus.EventPushOnline

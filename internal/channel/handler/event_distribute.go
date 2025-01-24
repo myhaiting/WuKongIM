@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/spf13/cast"
 	"strings"
 
@@ -143,11 +144,15 @@ func (h *Handler) distributeByTag(leaderId uint64, tag *types.Tag, channelId str
 					pubshEvents = make([]*eventbus.Event, 0)
 				}
 
+				fmt.Println("Distribute-", uid, " - type:", event.Frame.GetFrameType())
+
 				// 如果是客服频道，并且消息设置为仅客服可见，则不分发给访客
 				// TODO 分发时候忽略访客，但是会话及历史并没有剔除
 				if channelType == wkproto.ChannelTypeCustomerService &&
 					event.Frame.GetFrameType() == wkproto.SEND &&
 					strings.HasPrefix(uid, "V") {
+
+					fmt.Println("Visitor-", uid, " - type:", event.Frame.GetFrameType())
 
 					packet := event.Frame.(*wkproto.SendPacket)
 					var payload map[string]interface{}
@@ -157,6 +162,7 @@ func (h *Handler) distributeByTag(leaderId uint64, tag *types.Tag, channelId str
 						// 忽略内部回复
 						replyType, ok := payload["replyType"]
 						if ok && cast.ToInt(replyType) == 2 {
+							fmt.Println("Ignore-", uid, " - type:", event.Frame.GetFrameType())
 							continue
 						}
 					}

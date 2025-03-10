@@ -123,6 +123,7 @@ type Options struct {
 		HTTPAddr                    string        // webhook的http地址 通过此地址通知数据给第三方 格式为 http://xxxxx
 		GRPCAddr                    string        //  webhook的grpc地址 如果此地址有值 则不会再调用HttpAddr配置的地址,格式为 ip:port
 		MQAddr                      string        // webhook的rabbitMQ地址
+		QueueName                   string        // 队列名称
 		MsgNotifyEventPushInterval  time.Duration // 消息通知事件推送间隔，默认500毫秒发起一次推送
 		MsgNotifyEventCountPerPush  int           // 每次webhook消息通知事件推送消息数量限制 默认一次请求最多推送100条
 		MsgNotifyEventRetryMaxCount int           // 消息通知事件消息推送失败最大重试次数 默认为5次，超过将丢弃
@@ -491,6 +492,7 @@ func New(op ...Option) *Options {
 			HTTPAddr                    string
 			GRPCAddr                    string
 			MQAddr                      string
+			QueueName                   string
 			MsgNotifyEventPushInterval  time.Duration
 			MsgNotifyEventCountPerPush  int
 			MsgNotifyEventRetryMaxCount int
@@ -499,6 +501,7 @@ func New(op ...Option) *Options {
 			MsgNotifyEventPushInterval:  time.Millisecond * 500,
 			MsgNotifyEventCountPerPush:  100,
 			MsgNotifyEventRetryMaxCount: 5,
+			QueueName:                   "WK_MESSAGE_QUEUE",
 		},
 		Manager: struct {
 			On   bool
@@ -771,6 +774,7 @@ func (o *Options) ConfigureWithViper(vp *viper.Viper) {
 	o.Registry.IP = o.getString("registry.ip", o.Registry.IP)
 
 	o.Webhook.MQAddr = o.getString("webhook.mqAddr", o.Webhook.MQAddr)
+	o.Webhook.QueueName = o.getString("webhook.queueName", o.Webhook.QueueName)
 	o.Webhook.GRPCAddr = o.getString("webhook.grpcAddr", o.Webhook.GRPCAddr)
 	o.Webhook.HTTPAddr = o.getString("webhook.httpAddr", o.Webhook.HTTPAddr)
 	o.Webhook.MsgNotifyEventRetryMaxCount = o.getInt("webhook.msgNotifyEventRetryMaxCount", o.Webhook.MsgNotifyEventRetryMaxCount)

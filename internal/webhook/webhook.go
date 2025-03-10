@@ -41,9 +41,9 @@ type Webhook struct {
 	onlinestatusLock sync.RWMutex
 	onlinestatusList []string
 	focusEvents      map[string]struct{} // 用户关注的事件类型,如果为空则推送所有类型
-
-	dialer    *amqpextra.Dialer
-	publisher *publisher.Publisher
+	queueName        string              // 队列名称
+	dialer           *amqpextra.Dialer
+	publisher        *publisher.Publisher
 }
 
 func New() *Webhook {
@@ -71,8 +71,9 @@ func New() *Webhook {
 
 	// 如果是MQ
 	var (
-		dialer *amqpextra.Dialer
-		pub    *publisher.Publisher
+		dialer    *amqpextra.Dialer
+		pub       *publisher.Publisher
+		queueName string
 	)
 	if options.G.WebhookMQOn() {
 		dialer, err = amqpextra.NewDialer(amqpextra.WithURL(options.G.Webhook.MQAddr))
@@ -83,6 +84,7 @@ func New() *Webhook {
 		if err != nil {
 			panic(err)
 		}
+		queueName = options.G.Webhook.QueueName
 	}
 
 	// 检查用户配置了关注的事件
@@ -106,6 +108,7 @@ func New() *Webhook {
 		stoped:           make(chan struct{}),
 		dialer:           dialer,
 		publisher:        pub,
+		queueName:        queueName,
 		httpClient: &http.Client{
 			Transport: &http.Transport{
 				DialContext: (&net.Dialer{
@@ -441,7 +444,7 @@ func (w *Webhook) sendWebhook(event string, data []byte) error {
 
 func (w *Webhook) sendWebhookForMQ(event string, data []byte) error {
 	if err := w.publisher.Publish(publisher.Message{
-		Key: "WK_MESSAGE_QUEUE",
+		Key: w.queueName,
 		Publishing: amqp.Publishing{
 			Headers: amqp.Table{
 				"X-WK-Event": event,

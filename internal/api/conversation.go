@@ -39,6 +39,8 @@ func (s *conversation) route(r *wkhttp.WKHttp) {
 	r.POST("/conversations/delete", s.deleteConversation)           // 删除会话
 	r.POST("/conversation/sync", s.syncUserConversation)            // 同步会话
 	r.POST("/conversation/syncMessages", s.syncRecentMessages)      // 同步会话最近消息
+
+	r.POST("/conversation/channels", s.conversationChannels) // 获取最近会话的频道集合
 }
 
 // // Get a list of recent conversations
@@ -304,9 +306,10 @@ func (s *conversation) deleteConversation(c *wkhttp.Context) {
 func (s *conversation) syncUserConversation(c *wkhttp.Context) {
 	var req struct {
 		UID         string `json:"uid"`
-		Version     int64  `json:"version"`       // 当前客户端的会话最大版本号(客户端最新会话的时间戳)
+		Version     int64  `json:"version"`       // 当前客户端的会话最大版本号(客户端最新会话的时间戳)（TODO: 这个参数可以废弃了,使用OnlyUnread）
 		LastMsgSeqs string `json:"last_msg_seqs"` // 客户端所有会话的最后一条消息序列号 格式： channelID:channelType:last_msg_seq|channelID:channelType:last_msg_seq
 		MsgCount    int64  `json:"msg_count"`     // 每个会话消息数量
+		OnlyUnread  uint8  `json:"only_unread"`   // 只返回未读最近会话 1.只返回未读最近会话 0.不限制
 	}
 	bodyBytes, err := BindJSON(&req, c)
 	if err != nil {
@@ -367,8 +370,6 @@ func (s *conversation) syncUserConversation(c *wkhttp.Context) {
 		}
 	}
 
-	// conversations里去掉重复的
-
 	// 获取真实的频道ID
 	getRealChannelId := func(fakeChannelId string, channelType uint8) string {
 		realChannelId := fakeChannelId
@@ -395,6 +396,8 @@ func (s *conversation) syncUserConversation(c *wkhttp.Context) {
 
 		if msgSeq != 0 {
 			msgSeq = msgSeq + 1 // 如果客户端传递了messageSeq，则需要获取这个messageSeq之后的消息
+		} else if req.Version > 0 || req.OnlyUnread == 1 { // 如果客户端传递了version，则获取有新消息的会话
+			msgSeq = conversation.ReadToMsgSeq + 1
 		}
 
 		channelRecentMessageReqs = append(channelRecentMessageReqs, &channelRecentMessageReq{
@@ -426,6 +429,7 @@ func (s *conversation) syncUserConversation(c *wkhttp.Context) {
 			}
 			resp := newSyncUserConversationResp(conversation)
 
+			// 填充最近消息
 			for _, channelRecentMessage := range channelRecentMessages {
 				if conversation.ChannelId == channelRecentMessage.ChannelId && conversation.ChannelType == channelRecentMessage.ChannelType {
 					if len(channelRecentMessage.Messages) > 0 {
@@ -445,6 +449,7 @@ func (s *conversation) syncUserConversation(c *wkhttp.Context) {
 				}
 			}
 
+			// 比较客户端的序号和服务端的序号，如果客户端的序号大于等于服务端的序号，则不返回
 			msgSeq := channelLastMsgMap[fmt.Sprintf("%s-%d", conversation.ChannelId, conversation.ChannelType)]
 
 			if msgSeq != 0 && msgSeq >= uint64(resp.LastMsgSeq) {
@@ -513,4 +518,71 @@ func (s *conversation) syncRecentMessages(c *wkhttp.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, channelRecentMessages)
+}
+
+func (s *conversation) conversationChannels(c *wkhttp.Context) {
+	var req struct {
+		UID string `json:"uid"`
+	}
+
+	bodyBytes, err := BindJSON(&req, c)
+	if err != nil {
+		s.Error("数据格式有误！", zap.Error(err))
+		c.ResponseError(err)
+		return
+	}
+
+	leaderInfo, err := service.Cluster.SlotLeaderOfChannel(req.UID, wkproto.ChannelTypePerson) // 获取频道的领导节点
+	if err != nil {
+		s.Error("获取频道所在节点失败！!", zap.Error(err), zap.String("channelID", req.UID), zap.Uint8("channelType", wkproto.ChannelTypePerson))
+		c.ResponseError(errors.New("获取频道所在节点失败！"))
+		return
+	}
+	leaderIsSelf := leaderInfo.Id == options.G.Cluster.NodeId
+
+	if !leaderIsSelf {
+		s.Debug("转发请求：", zap.String("url", fmt.Sprintf("%s%s", leaderInfo.ApiServerAddr, c.Request.URL.Path)))
+		c.ForwardWithBody(fmt.Sprintf("%s%s", leaderInfo.ApiServerAddr, c.Request.URL.Path), bodyBytes)
+		return
+	}
+
+	// ==================== 获取用户活跃的最近会话 ====================
+	conversations, err := service.Store.GetLastConversations(req.UID, wkdb.ConversationTypeChat, 0, options.G.Conversation.UserMaxCount)
+	if err != nil && err != wkdb.ErrNotFound {
+		s.Error("获取conversation失败！", zap.Error(err), zap.String("uid", req.UID))
+		c.ResponseError(errors.New("获取conversation失败！"))
+		return
+	}
+
+	// 获取用户缓存的最近会话
+	cacheConversations := service.ConversationManager.GetFromCache(req.UID, wkdb.ConversationTypeChat)
+
+	for _, cacheConversation := range cacheConversations {
+		exist := false
+		for i, conversation := range conversations {
+			if cacheConversation.ChannelId == conversation.ChannelId && cacheConversation.ChannelType == conversation.ChannelType {
+				if cacheConversation.ReadToMsgSeq > conversation.ReadToMsgSeq {
+					conversations[i].ReadToMsgSeq = cacheConversation.ReadToMsgSeq
+				}
+				exist = true
+				break
+			}
+		}
+		if !exist {
+			conversations = append(conversations, cacheConversation)
+		}
+	}
+
+	// 去掉重复的会话
+	conversations = removeDuplicates(conversations)
+
+	channels := make([]interface{}, 0, len(conversations))
+
+	for _, conversation := range conversations {
+		channels = append(channels, map[string]interface{}{
+			"channel_id":   conversation.ChannelId,
+			"channel_type": conversation.ChannelType,
+		})
+	}
+	c.JSON(http.StatusOK, channels)
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/WuKongIM/WuKongIM/internal/ingress"
 	"github.com/WuKongIM/WuKongIM/internal/manager"
 	"github.com/WuKongIM/WuKongIM/internal/options"
+	"github.com/WuKongIM/WuKongIM/internal/plugin"
 	pusherevent "github.com/WuKongIM/WuKongIM/internal/pusher/event"
 	pusherhandler "github.com/WuKongIM/WuKongIM/internal/pusher/handler"
 	"github.com/WuKongIM/WuKongIM/internal/service"
@@ -87,6 +88,9 @@ type Server struct {
 	pushEventPool *pusherevent.EventPool
 
 	apiRegistry registry.Registry // 注册服务
+
+	// plugin server
+	pluginServer *plugin.Server
 }
 
 func New(opts *options.Options) *Server {
@@ -196,6 +200,8 @@ func New(opts *options.Options) *Server {
 				clusterconfig.WithChannelMaxReplicaCount(uint32(s.opts.Cluster.ChannelReplicaCount)),
 				clusterconfig.WithSlotMaxReplicaCount(uint32(s.opts.Cluster.SlotReplicaCount)),
 				clusterconfig.WithPongMaxTick(s.opts.Cluster.PongMaxTick),
+				clusterconfig.WithServerAddr(s.opts.Cluster.ServerAddr),
+				clusterconfig.WithSeed(s.opts.Cluster.Seed),
 			)),
 			cluster.WithAddr(s.opts.Cluster.Addr),
 			cluster.WithDataDir(path.Join(opts.DataDir)),
@@ -232,6 +238,12 @@ func New(opts *options.Options) *Server {
 			panic(err)
 		}
 	}
+
+	// plugin server
+	s.pluginServer = plugin.NewServer(
+		plugin.NewOptions(plugin.WithDir(path.Join(s.opts.RootDir, "plugins"))),
+	)
+	service.PluginManager = s.pluginServer
 	return s
 }
 
@@ -350,6 +362,11 @@ func (s *Server) Start() error {
 		return err
 	}
 
+	err = s.pluginServer.Start()
+	if err != nil {
+		return err
+	}
+
 	// registry
 	if s.apiRegistry != nil {
 		host := s.opts.Registry.IP
@@ -410,6 +427,8 @@ func (s *Server) Stop() error {
 			return err
 		}
 	}
+
+	s.pluginServer.Stop()
 
 	s.userEventPool.Stop()
 
@@ -501,21 +520,31 @@ func (s *Server) onClose(conn wknet.Conn) {
 	connCtxObj := conn.Context()
 	if connCtxObj != nil {
 		connCtx := connCtxObj.(*eventbus.Conn)
-		eventbus.User.RemoveConn(connCtx)
+		userLeaderId := s.userLeaderId(connCtx.Uid)
 
-		if !s.isLeaderNode(connCtx.Uid) {
+		// 如果当前连接即属于本节点，本节点又是此连接的领导节点,则发起移除事件
+		if options.G.IsLocalNode(userLeaderId) && userLeaderId == connCtx.NodeId {
+			eventbus.User.RemoveConn(connCtx)
+		} else if !options.G.IsLocalNode(userLeaderId) {
+			// 直接移除连接（不会触发移除事件）
+			eventbus.User.DirectRemoveConn(connCtx)
 			// 如果当前节点不是用户的领导节点，则通知领导节点移除连接
 			eventbus.User.RemoveLeaderConn(connCtx)
+		} else {
+			// 如果两个都不是，仅仅移除本地的连接
+			eventbus.User.DirectRemoveConn(connCtx)
 		}
+
 	}
+	// 移除连接管理的此连接
 	service.ConnManager.RemoveConn(conn)
 }
 
-// 是否是用户的领导节点
-func (s *Server) isLeaderNode(uid string) bool {
+// 获取用户领导id
+func (s *Server) userLeaderId(uid string) uint64 {
 	slotId := service.Cluster.GetSlotId(uid)
 	leaderId := service.Cluster.SlotLeaderId(slotId)
-	return options.G.IsLocalNode(leaderId)
+	return leaderId
 }
 
 func (s *Server) WithRequestTimeout() (context.Context, context.CancelFunc) {

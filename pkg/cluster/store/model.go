@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/WuKongIM/WuKongIM/pkg/raft/types"
 	"github.com/WuKongIM/WuKongIM/pkg/wkdb"
 	"github.com/WuKongIM/WuKongIM/pkg/wkutil"
 	wkproto "github.com/WuKongIM/WuKongIMGoProto"
@@ -89,6 +88,8 @@ const (
 	CMDAddOrUpdateTester
 	// 移除测试机
 	CMDRemoveTester
+	// 更新用户插件号
+	CMDUpdateUserPluginNo
 )
 
 func (c CMDType) Uint16() uint16 {
@@ -171,6 +172,8 @@ func (c CMDType) String() string {
 		return "CMDAddOrUpdateTester"
 	case CMDRemoveTester:
 		return "CMDRemoveTester"
+	case CMDUpdateUserPluginNo:
+		return "CMDUpdateUserPluginNo"
 	default:
 		return fmt.Sprintf("CMDUnknown[%d]", c)
 	}
@@ -1145,7 +1148,9 @@ func EncodeCMDAddStreams(streams []*wkdb.Stream) []byte {
 	defer encoder.End()
 	encoder.WriteUint32(uint32(len(streams)))
 	for _, stream := range streams {
-		encoder.WriteBinary(stream.Encode())
+		data := stream.Encode()
+		encoder.WriteUint32(uint32(len(data)))
+		encoder.WriteBytes(data)
 	}
 	return encoder.Bytes()
 }
@@ -1159,10 +1164,16 @@ func (c *CMD) DecodeCMDAddStreams() ([]*wkdb.Stream, error) {
 	}
 	streams := make([]*wkdb.Stream, 0, count)
 	for i := uint32(0); i < count; i++ {
-		data, err := decoder.Binary()
+		dataLen, err := decoder.Uint32()
 		if err != nil {
 			return nil, err
 		}
+
+		data, err := decoder.Bytes(int(dataLen))
+		if err != nil {
+			return nil, err
+		}
+
 		stream := &wkdb.Stream{}
 		if err = stream.Decode(data); err != nil {
 			return nil, err
@@ -1289,9 +1300,23 @@ func (c *CMD) DecodeCMDRemoveTester() (no string, err error) {
 	return
 }
 
-var ErrStoreStopped = fmt.Errorf("store stopped")
-
-type applyReq struct {
-	logs  []types.Log
-	waitC chan error
+func EncodeCMDUserPluginNo(uid string, pluginNo string) []byte {
+	encoder := wkproto.NewEncoder()
+	defer encoder.End()
+	encoder.WriteString(uid)
+	encoder.WriteString(pluginNo)
+	return encoder.Bytes()
 }
+
+func (c *CMD) DecodeCMDUserPluginNo() (uid string, pluginNo string, err error) {
+	decoder := wkproto.NewDecoder(c.Data)
+	if uid, err = decoder.String(); err != nil {
+		return
+	}
+	if pluginNo, err = decoder.String(); err != nil {
+		return
+	}
+	return
+}
+
+var ErrStoreStopped = fmt.Errorf("store stopped")

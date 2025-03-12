@@ -245,15 +245,23 @@ func sendMessageToChannel(req messageSendReq, channelId string, channelType uint
 	}
 	messageId := options.G.GenMessageId()
 
+	eventType := eventbus.EventChannelOnSend
+
+	if strings.TrimSpace(req.StreamNo) != "" {
+		eventType = eventbus.EventChannelOnStream
+	}
+
 	event := &eventbus.Event{
 		Conn: &eventbus.Conn{
 			Uid:      req.FromUID,
 			DeviceId: options.G.SystemDeviceId,
 		},
-		Type:      eventbus.EventChannelOnSend,
-		Frame:     sendPacket,
-		MessageId: messageId,
-		TagKey:    req.TagKey,
+		Type:       eventType,
+		Frame:      sendPacket,
+		MessageId:  messageId,
+		StreamNo:   req.StreamNo,
+		StreamFlag: streamFlag,
+		TagKey:     req.TagKey,
 		Track: track.Message{
 			PreStart: time.Now(),
 		},
@@ -327,7 +335,7 @@ func (m *message) sync(c *wkhttp.Context) {
 	}
 
 	if req.Limit <= 0 {
-		req.Limit = 50
+		req.Limit = 200
 	}
 
 	leaderInfo, err := service.Cluster.SlotLeaderOfChannel(req.UID, wkproto.ChannelTypePerson) // 获取频道的领导节点

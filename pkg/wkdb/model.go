@@ -72,6 +72,7 @@ func (m *Message) Unmarshal(data []byte) error {
 		return err
 	}
 	rcv := f.(*wkproto.RecvPacket)
+
 	m.RecvPacket = *rcv
 	if m.Term, err = dec.Uint64(); err != nil {
 		return err
@@ -137,6 +138,7 @@ type User struct {
 	RecvMsgCount      uint64     `json:"recv_msg_count,omitempty"`      // 接收消息数量
 	SendMsgBytes      uint64     `json:"send_msg_bytes,omitempty"`      // 发送消息字节数
 	RecvMsgBytes      uint64     `json:"recv_msg_bytes,omitempty"`      // 接收消息字节数
+	PluginNo          string     `json:"plugin_no,omitempty"`           // 插件编号
 	CreatedAt         *time.Time `json:"created_at,omitempty"`          // 创建时间
 	UpdatedAt         *time.Time `json:"updated_at,omitempty"`          // 更新时间
 }

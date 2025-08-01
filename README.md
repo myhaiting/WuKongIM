@@ -2,6 +2,7 @@
 
 10(2015)年积累，沉淀出来的高性能通用通讯服务，支持即时通讯，站内/系统消息，消息中台，物联网通讯，音视频信令，直播弹幕，客服系统，AI通讯，即时社区等场景。
 
+
 `本项目需要在go1.20.0或以上环境编译`
 
 `不再支持Windows系统`
@@ -16,14 +17,16 @@
 [English](./README_EN.md)
 
 <p align="center">
-<img align="left" height="110" src="./docs/logo.png">
+<img align="left" height="160" src="./docs/logo.png">
 <ul>
 <!-- <li><strong>QQ群</strong>: <a href="#">750224611</a></li> -->
 <!-- <li><strong>微信</strong>: <a href="#">wukongimgo（备注进群）</a></li> -->
 <li><strong>官网</strong>: https://githubim.com</li>
-<li><strong>通讯协议</strong>: <a href="https://githubim.com/server/advance/proto.html">WuKongIM协议</a></li>
+<li><strong>通讯协议1</strong>: <a href="https://githubim.com/server/advance/proto.html">WuKongIM二进制协议</a></li>
+<li><strong>通讯协议2</strong>: <a href="https://githubim.com/server/advance/jsonrpc.html">WuKongIM JSON协议(仅Websocket)</a></li>
 <li><strong>提问</strong>: https://github.com/WuKongIM/WuKongIM/issues</li>
 <li><strong>文档</strong>: https://githubim.com</li>
+<li><strong>架构文档</strong>: https://deepwiki.com/WuKongIM/WuKongIM</li>
 </ul>
 </p>
 
@@ -34,6 +37,8 @@
 
 架构图
 --------
+
+![架构图](./docs/architecture_v2.svg)
 
 ![架构图](./docs/architecture/cluster.png)
 
@@ -152,6 +157,8 @@ web聊天场景演示： http://imdemo.githubim.com
 - [x] 支持Datasource，无缝对接自己的业务系统数据源
 - [x] 支持Websocket连接
 - [x] 支持TLS 1.3
+- [x] 支持proxyproto协议
+- [x] 支持JSON协议通讯
 - [x] 支持Prometheus监控
 - [x] 监控系统开发
 - [x] 支持流式消息，类似chatgpt的结果输出流
@@ -216,6 +223,42 @@ go run main.go --config  ./exampleconfig/cluster3.yaml
 后台管理系统： http://127.0.0.1:5300/web
 
 聊天演示地址：http://127.0.0.1:5172/chatdemo
+
+### 客户端使用
+
+```typescript
+import { WKIM, WKIMChannelType, WKIMEvent } from 'easyjssdk';
+
+// 1. 初始化
+const im = WKIM.init("ws://your-wukongim-server.com:5200", {
+    uid: "your_user_id", // 当前连接的用户uid
+    token: "your_auth_token" // 当前连接用户的认证token（默认不需要认证，如果开启了需要填写）
+});
+
+// 2. 监听
+im.on(WKIMEvent.Connect, () => {
+    console.log("IM Connected!");
+    //  发送消息
+    const result = await im.send("target user",WKIMChannelType.Person,{ type: "text", content: "Hello from EasyJSSDK!" })
+});
+
+// 监听接收消息事件
+im.on(WKIMEvent.Message, (message) => {
+    console.log("Received:", message);
+});
+
+// 监听错误事件
+im.on(WKIMEvent.Error, (error) => {
+    console.error("IM Error:", error);
+});
+
+// 3. 连接
+await im.connect()
+
+
+
+
+```
 
 
 正式部署

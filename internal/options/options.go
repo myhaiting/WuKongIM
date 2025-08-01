@@ -53,19 +53,20 @@ const (
 )
 
 type Options struct {
-	vp          *viper.Viper // 内部配置对象
-	Mode        Mode         // 模式 debug 测试 release 正式 bench 压力测试
-	HTTPAddr    string       // http api的监听地址 默认为 0.0.0.0:5001
-	Addr        string       // tcp监听地址 例如：tcp://0.0.0.0:5100
-	RootDir     string       // 根目录
-	DataDir     string       // 数据目录
-	GinMode     string       // gin框架的模式
-	WSAddr      string       // websocket 监听地址 例如：ws://0.0.0.0:5200
-	WSSAddr     string       // wss 监听地址 例如：wss://0.0.0.0:5210
-	WSTLSConfig *tls.Config
-	Stress      bool     // 是否开启压力测试
-	Violent     bool     // 狂暴模式，开启这个后将以性能为第一，稳定性第二, 压力测试模式下默认为true
-	WSSConfig   struct { // wss的证书配置
+	vp                *viper.Viper // 内部配置对象
+	Mode              Mode         // 模式 debug 测试 release 正式 bench 压力测试
+	HTTPAddr          string       // http api的监听地址 默认为 0.0.0.0:5001
+	Addr              string       // tcp监听地址 例如：tcp://0.0.0.0:5100
+	RootDir           string       // 根目录
+	DataDir           string       // 数据目录
+	GinMode           string       // gin框架的模式
+	WSAddr            string       // websocket 监听地址 例如：ws://0.0.0.0:5200
+	WSSAddr           string       // wss 监听地址 例如：wss://0.0.0.0:5210
+	WSTLSConfig       *tls.Config
+	Stress            bool     // 是否开启压力测试
+	Violent           bool     // 狂暴模式，开启这个后将以性能为第一，稳定性第二, 压力测试模式下默认为true
+	DisableEncryption bool     // 禁用加密
+	WSSConfig         struct { // wss的证书配置
 		CertFile string // 证书文件
 		KeyFile  string // 私钥文件
 	}
@@ -226,8 +227,9 @@ type Options struct {
 		HeartbeatIntervalTick int // 心跳间隔tick
 		ElectionIntervalTick  int // 选举间隔tick
 
-		ChannelReactorSubCount int // 频道reactor sub的数量
-		SlotReactorSubCount    int // 槽reactor sub的数量
+		ChannelReactorSubCount      int // 频道reactor sub的数量
+		ChannelDestoryAfterIdleTick int // 频道空闲多久后销毁（如果TickInterval是100ms, 那么10 * 60 * 30这个值是30分钟，具体时间根据TickInterval来定）
+		SlotReactorSubCount         int // 槽reactor sub的数量
 
 		PongMaxTick int // 节点超过多少tick没有回应心跳就认为是掉线
 	}
@@ -312,6 +314,9 @@ type Options struct {
 		SocketPath string        // 插件socket地址
 		Install    []string      // 默认插件安装地址
 	}
+	DisableJSONRPC bool // 是否禁用jsonrpc
+
+	DisableCMDMessageSync bool // 是否禁用命令消息同步,设置为true后，将不会同步离线的cmd消息，离线cmd消息接口都会返回空的成功
 }
 
 type MigrateStep string
@@ -427,7 +432,7 @@ func New(op ...Option) *Options {
 			On:                 true,
 			CacheExpire:        time.Hour * 2,
 			UserMaxCount:       1000,
-			SyncInterval:       time.Minute * 5,
+			SyncInterval:       time.Minute,
 			SyncOnce:           100,
 			BytesPerSave:       1024 * 1024 * 5,
 			SavePoolSize:       100,
@@ -524,38 +529,40 @@ func New(op ...Option) *Options {
 			Addr: "0.0.0.0:5172",
 		},
 		Cluster: struct {
-			NodeId                 uint64
-			Addr                   string
-			ServerAddr             string
-			APIUrl                 string
-			ReqTimeout             time.Duration
-			Role                   Role
-			Seed                   string
-			SlotReplicaCount       int
-			ChannelReplicaCount    int
-			SlotCount              int
-			InitNodes              []*Node
-			TickInterval           time.Duration
-			HeartbeatIntervalTick  int
-			ElectionIntervalTick   int
-			ChannelReactorSubCount int
-			SlotReactorSubCount    int
-			PongMaxTick            int
+			NodeId                      uint64
+			Addr                        string
+			ServerAddr                  string
+			APIUrl                      string
+			ReqTimeout                  time.Duration
+			Role                        Role
+			Seed                        string
+			SlotReplicaCount            int
+			ChannelReplicaCount         int
+			SlotCount                   int
+			InitNodes                   []*Node
+			TickInterval                time.Duration
+			HeartbeatIntervalTick       int
+			ElectionIntervalTick        int
+			ChannelReactorSubCount      int
+			ChannelDestoryAfterIdleTick int
+			SlotReactorSubCount         int
+			PongMaxTick                 int
 		}{
-			NodeId:                 1001,
-			Addr:                   "tcp://0.0.0.0:11110",
-			ServerAddr:             "",
-			ReqTimeout:             time.Second * 10,
-			Role:                   RoleReplica,
-			SlotCount:              64,
-			SlotReplicaCount:       3,
-			ChannelReplicaCount:    3,
-			TickInterval:           time.Millisecond * 150,
-			HeartbeatIntervalTick:  1,
-			ElectionIntervalTick:   10,
-			ChannelReactorSubCount: 128,
-			SlotReactorSubCount:    16,
-			PongMaxTick:            30,
+			NodeId:                      1001,
+			Addr:                        "tcp://0.0.0.0:11110",
+			ServerAddr:                  "",
+			ReqTimeout:                  time.Second * 10,
+			Role:                        RoleReplica,
+			SlotCount:                   64,
+			SlotReplicaCount:            3,
+			ChannelReplicaCount:         3,
+			TickInterval:                time.Millisecond * 150,
+			HeartbeatIntervalTick:       1,
+			ElectionIntervalTick:        10,
+			ChannelReactorSubCount:      128,
+			ChannelDestoryAfterIdleTick: (1000 / 150) * 60 * 10, // 10分钟 (150表示tick间隔时间)
+			SlotReactorSubCount:         16,
+			PongMaxTick:                 30,
 		},
 		Trace: struct {
 			ServiceName      string
@@ -745,6 +752,8 @@ func (o *Options) ConfigureWithViper(vp *viper.Viper) {
 	if strings.TrimSpace(o.ManagerToken) != "" {
 		o.ManagerTokenOn = true
 	}
+
+	o.DisableEncryption = o.getBool("disableEncryption", o.DisableEncryption)
 
 	o.External.IP = o.getString("external.ip", o.External.IP)
 	o.External.TCPAddr = o.getString("external.tcpAddr", o.External.TCPAddr)
@@ -939,6 +948,7 @@ func (o *Options) ConfigureWithViper(vp *viper.Viper) {
 	o.Cluster.ElectionIntervalTick = o.getInt("cluster.electionIntervalTick", o.Cluster.ElectionIntervalTick)
 	o.Cluster.HeartbeatIntervalTick = o.getInt("cluster.heartbeatIntervalTick", o.Cluster.HeartbeatIntervalTick)
 	o.Cluster.ChannelReactorSubCount = o.getInt("cluster.channelReactorSubCount", o.Cluster.ChannelReactorSubCount)
+	o.Cluster.ChannelDestoryAfterIdleTick = o.getInt("cluster.channelDestoryAfterIdleTick", o.Cluster.ChannelDestoryAfterIdleTick)
 	o.Cluster.SlotReactorSubCount = o.getInt("cluster.slotReactorSubCount", o.Cluster.SlotReactorSubCount)
 	o.Cluster.APIUrl = o.getString("cluster.apiUrl", o.Cluster.APIUrl)
 
@@ -1013,6 +1023,8 @@ func (o *Options) ConfigureWithViper(vp *viper.Viper) {
 	o.PprofOn = o.getBool("pprofOn", o.PprofOn)
 	o.OldV1Api = o.getString("oldV1Api", o.OldV1Api)
 	o.MigrateStartStep = MigrateStep(o.getString("migrateStartStep", string(o.MigrateStartStep)))
+	o.DisableJSONRPC = o.getBool("disableJSONRPC", o.DisableJSONRPC)
+	o.DisableCMDMessageSync = o.getBool("disableCMDMessageSync", o.DisableCMDMessageSync)
 
 }
 

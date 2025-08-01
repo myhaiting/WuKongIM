@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/WuKongIM/WuKongIM/pkg/raft/types"
+	rafttypes "github.com/WuKongIM/WuKongIM/pkg/raft/types"
 	"github.com/WuKongIM/WuKongIM/pkg/wkdb"
 	"github.com/WuKongIM/WuKongIM/pkg/wkserver/proto"
 	wkproto "github.com/WuKongIM/WuKongIMGoProto"
@@ -34,6 +35,28 @@ func (r *rpcClient) RequestChannelProposeBatchUntilApplied(nodeId uint64, channe
 		return nil, err
 	}
 	body, err := r.request(nodeId, "/rpc/channel/propose", data)
+	if err != nil {
+		return nil, err
+	}
+
+	resps := types.ProposeRespSet{}
+	if err := resps.Unmarshal(body); err != nil {
+		return nil, err
+	}
+	return resps, nil
+}
+
+// RequestSlotProposeBatchUntilApplied 向指定节点请求槽提案
+func (r *rpcClient) RequestSlotProposeBatchUntilApplied(nodeId uint64, slotId uint32, reqs types.ProposeReqSet) (types.ProposeRespSet, error) {
+	req := &slotProposeReq{
+		SlotId: slotId,
+		reqs:   reqs,
+	}
+	data, err := req.encode()
+	if err != nil {
+		return nil, err
+	}
+	body, err := r.request(nodeId, "/rpc/slot/propose", data)
 	if err != nil {
 		return nil, err
 	}
@@ -168,6 +191,23 @@ func (r *rpcClient) RequestClusterJoin(nodeId uint64, req *ClusterJoinReq) (*Clu
 	return resp, nil
 }
 
+// RequestClusterLogs 请求分布式日志
+func (r *rpcClient) RequestClusterLogs(nodeId uint64, req *clusterLogsReq) ([]rafttypes.Log, error) {
+	data, err := req.encode()
+	if err != nil {
+		return nil, err
+	}
+	body, err := r.request(nodeId, "/rpc/cluster/logs", data)
+	if err != nil {
+		return nil, err
+	}
+	logSet := logSet{}
+	if err := logSet.decode(body); err != nil {
+		return nil, err
+	}
+	return logSet, nil
+}
+
 func (r *rpcClient) request(nodeId uint64, path string, body []byte) ([]byte, error) {
 
 	node := r.s.nodeManager.node(nodeId)
@@ -178,7 +218,7 @@ func (r *rpcClient) request(nodeId uint64, path string, body []byte) ([]byte, er
 	timeoutCtx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
-	resp, err := node.requestWithContext(timeoutCtx, path, body)
+	resp, err := node.RequestWithContext(timeoutCtx, path, body)
 	if err != nil {
 		return nil, err
 	}

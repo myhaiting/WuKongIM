@@ -43,7 +43,6 @@ import (
 	"github.com/WuKongIM/WuKongIM/version"
 	"github.com/gin-gonic/gin"
 	"github.com/judwhite/go-svc"
-	"go.etcd.io/etcd/pkg/v3/idutil"
 	"go.uber.org/zap"
 )
 
@@ -52,10 +51,9 @@ func init() {
 }
 
 type Server struct {
-	opts          *options.Options  // 配置
-	wklog.Log                       // 日志
-	clusterServer *cluster.Server   // 分布式服务实现
-	reqIDGen      *idutil.Generator // 请求ID生成器
+	opts          *options.Options // 配置
+	wklog.Log                      // 日志
+	clusterServer *cluster.Server  // 分布式服务实现
 	ctx           context.Context
 	cancel        context.CancelFunc
 	start         time.Time     // 服务开始时间
@@ -99,10 +97,9 @@ func New(opts *options.Options) *Server {
 	options.G = opts
 
 	s := &Server{
-		opts:     opts,
-		Log:      wklog.NewWKLog("Server"),
-		reqIDGen: idutil.NewGenerator(uint16(opts.Cluster.NodeId), time.Now()),
-		start:    now,
+		opts:  opts,
+		Log:   wklog.NewWKLog("Server"),
+		start: now,
 	}
 	// 配置检查
 	err := opts.Check()
@@ -162,13 +159,13 @@ func New(opts *options.Options) *Server {
 	s.webhook = webhook.New()
 	service.Webhook = s.webhook
 	// manager
-	s.retryManager = manager.NewRetryManager()               // 消息重试管理
-	s.conversationManager = manager.NewConversationManager() // 会话管理
+	s.retryManager = manager.NewRetryManager()                 // 消息重试管理
+	s.conversationManager = manager.NewConversationManager(10) // 会话管理
 	s.tagManager = manager.NewTagManager(16, func() uint64 {
 		return service.Cluster.NodeVersion()
 	})
 	// register service
-	service.ConnManager = manager.NewConnManager(18) // 连接管理
+	service.ConnManager = manager.NewConnManager(18, s.engine) // 连接管理
 	service.ConversationManager = s.conversationManager
 	service.RetryManager = s.retryManager
 	service.TagManager = s.tagManager
@@ -202,6 +199,8 @@ func New(opts *options.Options) *Server {
 				clusterconfig.WithPongMaxTick(s.opts.Cluster.PongMaxTick),
 				clusterconfig.WithServerAddr(s.opts.Cluster.ServerAddr),
 				clusterconfig.WithSeed(s.opts.Cluster.Seed),
+				clusterconfig.WithChannelDestoryAfterIdleTick(s.opts.Cluster.ChannelDestoryAfterIdleTick),
+				clusterconfig.WithTickInterval(s.opts.Cluster.TickInterval),
 			)),
 			cluster.WithAddr(s.opts.Cluster.Addr),
 			cluster.WithDataDir(path.Join(opts.DataDir)),

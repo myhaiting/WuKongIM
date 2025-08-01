@@ -99,6 +99,10 @@ const (
 	CMDUpdatePluginConfig
 	// 移除插件用户
 	CMDRemovePluginUser
+	// 批量添加最近会话如果存在则不添加
+	CMDAddOrUpdateConversationsBatchIfNotExist
+	// 更新最近会话的已删除的消息序号位置
+	CMDUpdateConversationDeletedAtMsgSeq
 )
 
 func (c CMDType) Uint16() uint16 {
@@ -189,6 +193,10 @@ func (c CMDType) String() string {
 		return "CMDUpdatePluginConfig"
 	case CMDRemovePluginUser:
 		return "CMDRemovePluginUser"
+	case CMDAddOrUpdateConversationsBatchIfNotExist:
+		return "CMDAddOrUpdateConversationsBatchIfNotExist"
+	case CMDUpdateConversationDeletedAtMsgSeq:
+		return "CMDUpdateConversationDeletedAtMsgSeq"
 	default:
 		return fmt.Sprintf("CMDUnknown[%d]", c)
 	}
@@ -217,7 +225,9 @@ func NewCMDWithVersion(cmdType CMDType, data []byte, version CmdVersion) *CMD {
 }
 
 func (c *CMD) Marshal() ([]byte, error) {
-	c.version = 1
+	if c.version == 0 {
+		c.version = 1
+	}
 	enc := wkproto.NewEncoder()
 	defer enc.End()
 	enc.WriteUint16(c.version.Uint16())
@@ -493,7 +503,23 @@ func (c *CMD) CMDContent() (string, error) {
 			"pluginNo": pluginNo,
 			"config":   config,
 		}), nil
-
+	case CMDAddOrUpdateConversationsBatchIfNotExist:
+		conversations, err := c.DecodeCMDAddOrUpdateConversations()
+		if err != nil {
+			return "", err
+		}
+		return wkutil.ToJSON(conversations), nil
+	case CMDUpdateConversationDeletedAtMsgSeq:
+		uid, channelId, channelType, deletedAtMsgSeq, err := c.DecodeCMDUpdateConversationDeletedAtMsgSeq()
+		if err != nil {
+			return "", err
+		}
+		return wkutil.ToJSON(map[string]interface{}{
+			"uid":             uid,
+			"channelId":       channelId,
+			"channelType":     channelType,
+			"deletedAtMsgSeq": deletedAtMsgSeq,
+		}), nil
 	}
 
 	return "", nil
@@ -829,6 +855,10 @@ func EncodeChannelInfo(c wkdb.ChannelInfo, version CmdVersion) ([]byte, error) {
 	if version > 0 {
 		enc.WriteString(c.Webhook)
 	}
+	if version > 2 {
+		enc.WriteUint8(wkutil.BoolToUint8(c.AllowStranger))
+		enc.WriteUint8(wkutil.BoolToUint8(c.SendBan))
+	}
 	return enc.Bytes(), nil
 }
 
@@ -882,6 +912,19 @@ func (c *CMD) DecodeChannelInfo() (wkdb.ChannelInfo, error) {
 		if channelInfo.Webhook, err = dec.String(); err != nil {
 			return channelInfo, err
 		}
+	}
+
+	if c.version > 2 {
+		var allowStranger uint8
+		if allowStranger, err = dec.Uint8(); err != nil {
+			return channelInfo, err
+		}
+		var sendBan uint8
+		if sendBan, err = dec.Uint8(); err != nil {
+			return channelInfo, err
+		}
+		channelInfo.AllowStranger = wkutil.Uint8ToBool(allowStranger)
+		channelInfo.SendBan = wkutil.Uint8ToBool(sendBan)
 	}
 
 	return channelInfo, err
@@ -1512,5 +1555,32 @@ func (c *CMD) DecodeCMDPluginConfig() (pluginNo string, config map[string]interf
 		return
 	}
 	err = json.Unmarshal(cfgData, &config)
+	return
+}
+
+func EncodeCMDUpdateConversationDeletedAtMsgSeq(uid string, channelId string, channelType uint8, deletedAtMsgSeq uint64) []byte {
+	encoder := wkproto.NewEncoder()
+	defer encoder.End()
+	encoder.WriteString(uid)
+	encoder.WriteString(channelId)
+	encoder.WriteUint8(channelType)
+	encoder.WriteUint64(deletedAtMsgSeq)
+	return encoder.Bytes()
+}
+
+func (c *CMD) DecodeCMDUpdateConversationDeletedAtMsgSeq() (uid string, channelId string, channelType uint8, deletedAtMsgSeq uint64, err error) {
+	decoder := wkproto.NewDecoder(c.Data)
+	if uid, err = decoder.String(); err != nil {
+		return
+	}
+	if channelId, err = decoder.String(); err != nil {
+		return
+	}
+	if channelType, err = decoder.Uint8(); err != nil {
+		return
+	}
+	if deletedAtMsgSeq, err = decoder.Uint64(); err != nil {
+		return
+	}
 	return
 }

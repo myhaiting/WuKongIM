@@ -29,6 +29,9 @@ func (r *rpcServer) setRoutes() {
 	// 频道提案
 	r.s.netServer.Route("/rpc/channel/propose", r.handleChannelPropose)
 
+	// 槽提案
+	r.s.netServer.Route("/rpc/slot/propose", r.handleSlotPropose)
+
 	// 获取频道或创建频道配置
 	r.s.netServer.Route("/rpc/channel/getOrCreateConfig", r.handleGetOrCreateChannelConfig)
 
@@ -48,6 +51,9 @@ func (r *rpcServer) setRoutes() {
 
 	// 节点加入
 	r.s.netServer.Route("/rpc/cluster/join", r.handleClusterJoin)
+
+	// 获取分布式日志
+	r.s.netServer.Route("/rpc/cluster/logs", r.handleClusterLogs)
 }
 
 func (r *rpcServer) handleChannelPropose(c *wkserver.Context) {
@@ -59,7 +65,7 @@ func (r *rpcServer) handleChannelPropose(c *wkserver.Context) {
 	}
 	timeoutCtx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
-	resps, err := r.s.channelServer.ProposeBatchUntilAppliedTimeout(timeoutCtx, req.channelId, req.channelType, req.reqs)
+	resps, err := r.s.channelServer.ProposeBatchUntilAppliedTimeoutForLocal(timeoutCtx, req.channelId, req.channelType, req.reqs)
 	if err != nil {
 		r.Error("channel propose failed", zap.Error(err), zap.String("channelId", req.channelId), zap.Uint8("channelType", req.channelType), zap.Uint64("nodeId", r.s.opts.ConfigOptions.NodeId))
 		c.WriteErr(err)
@@ -68,6 +74,30 @@ func (r *rpcServer) handleChannelPropose(c *wkserver.Context) {
 	data, err := resps.Marshal()
 	if err != nil {
 		r.Error("channel propose marshal failed", zap.Error(err))
+		c.WriteErr(err)
+		return
+	}
+	c.Write(data)
+}
+
+func (r *rpcServer) handleSlotPropose(c *wkserver.Context) {
+	req := &slotProposeReq{}
+	if err := req.decode(c.Body()); err != nil {
+		r.Error("decode channel propose req failed", zap.Error(err))
+		c.WriteErr(err)
+		return
+	}
+	timeoutCtx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	resps, err := r.s.slotServer.ProposeUntilAppliedTimeoutForLocal(timeoutCtx, req.SlotId, req.reqs)
+	if err != nil {
+		r.Error("slot propose failed", zap.Error(err), zap.Uint32("slotId", req.SlotId), zap.Uint64("nodeId", r.s.opts.ConfigOptions.NodeId))
+		c.WriteErr(err)
+		return
+	}
+	data, err := resps.Marshal()
+	if err != nil {
+		r.Error("slot propose marshal failed", zap.Error(err))
 		c.WriteErr(err)
 		return
 	}
@@ -349,4 +379,48 @@ func (r *rpcServer) handleClusterJoin(c *wkserver.Context) {
 		return
 	}
 	c.Write(result)
+}
+
+func (r *rpcServer) handleClusterLogs(c *wkserver.Context) {
+	req := &clusterLogsReq{}
+	if err := req.decode(c.Body()); err != nil {
+		r.Error("decode cluster logs req failed", zap.Error(err))
+		c.WriteErr(err)
+		return
+	}
+	if req.LogType == LogTypeUnknown {
+		req.LogType = LogTypeConfig
+	}
+
+	if req.Limit == 0 || req.Limit > 1000 {
+		req.Limit = 1000
+	}
+
+	var logs []rafttypes.Log
+	var err error
+	if req.OrderDesc {
+		logs, err = r.s.cfgServer.GetLogsInReverseOrder(req.StartLogIndex, req.EndLogIndex, int(req.Limit))
+	} else {
+		logs, err = r.s.cfgServer.GetLogsByLimit(req.StartLogIndex, req.EndLogIndex, int(req.Limit))
+	}
+	if err != nil {
+		r.Error("get logs failed", zap.Error(err))
+		c.WriteErr(err)
+		return
+	}
+
+	if len(logs) == 0 {
+		c.Write([]byte{})
+		return
+	}
+
+	logSet := logSet(logs)
+
+	data, err := logSet.encode()
+	if err != nil {
+		r.Error("marshal logs failed", zap.Error(err))
+		c.WriteErr(err)
+		return
+	}
+	c.Write(data)
 }

@@ -31,6 +31,10 @@ type DB interface {
 	TesterDB
 	// 插件
 	PluginDB
+
+	GetPerformanceMonitor() *PerformanceMonitor
+
+	GetCacheManager() *CacheManager
 }
 
 type MessageDB interface {
@@ -199,7 +203,11 @@ type ChannelDB interface {
 }
 
 type ConversationDB interface {
+	// AddOrUpdateConversations 添加或更新最近会话
 	AddOrUpdateConversations(conversations []Conversation) error
+
+	// AddOrUpdateConversationsBatchIfNotExist 批量添加或更新最近会话，如果存在则不添加
+	AddOrUpdateConversationsBatchIfNotExist(conversations []Conversation) error
 
 	// AddOrUpdateConversationsWithUser 添加或更新最近会话
 	AddOrUpdateConversationsWithUser(uid string, conversations []Conversation) error
@@ -220,7 +228,7 @@ type ConversationDB interface {
 	GetConversationsByType(uid string, tp ConversationType) ([]Conversation, error)
 
 	// GetLastConversations 获取指定用户的最近会话
-	GetLastConversations(uid string, tp ConversationType, updatedAt uint64, limit int) ([]Conversation, error)
+	GetLastConversations(uid string, tp ConversationType, updatedAt uint64, excludeChannelTypes []uint8, limit int) ([]Conversation, error)
 
 	// GetConversation 获取指定用户的指定会话
 	GetConversation(uid string, channelId string, channelType uint8) (Conversation, error)
@@ -235,6 +243,12 @@ type ConversationDB interface {
 
 	// SearchConversation 搜索最近会话
 	SearchConversation(req ConversationSearchReq) ([]Conversation, error)
+
+	// UpdateConversationDeletedAtMsgSeq 更新最近会话的已删除的消息序号位置
+	UpdateConversationDeletedAtMsgSeq(uid string, channelId string, channelType uint8, deletedAtMsgSeq uint64) error
+
+	// GetLastConversationIds 获取最近会话ID列表（用于测试重复ID问题）
+	GetLastConversationIds(uid string, updatedAt uint64, limit int) ([]uint64, error)
 }
 
 type ChannelClusterConfigDB interface {

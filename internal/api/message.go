@@ -45,12 +45,13 @@ func newMessage(s *Server) *message {
 func (m *message) route(r *wkhttp.WKHttp) {
 	r.POST("/message/send", m.send)           // 发送消息
 	r.POST("/message/sendbatch", m.sendBatch) // 批量发送消息
-	r.POST("/message/sync", m.sync)           // 消息同步(写模式)
-	r.POST("/message/syncack", m.syncack)     // 消息同步回执(写模式)
+
+	// 此接口后续会废弃（以后不提供带存储的命令消息，业务端通过不存储的命令 + 调用业务端接口一样可以实现相同效果）
+	r.POST("/message/sync", m.sync)       // 消息同步(写模式) （将废弃）
+	r.POST("/message/syncack", m.syncack) // 消息同步回执(写模式) （将废弃）
 
 	r.POST("/messages", m.searchMessages) // 批量查询消息
-
-	r.POST("/message", m.searchMessage) // 搜索单条消息
+	r.POST("/message", m.searchMessage)   // 搜索单条消息
 
 }
 
@@ -320,7 +321,13 @@ func (m *message) sendBatch(c *wkhttp.Context) {
 }
 
 // 消息同步
+// Deprecated: 将废弃
 func (m *message) sync(c *wkhttp.Context) {
+
+	if options.G.DisableCMDMessageSync {
+		c.JSON(http.StatusOK, []string{})
+		return
+	}
 
 	var req syncReq
 	bodyBytes, err := BindJSON(&req, c)
@@ -361,20 +368,27 @@ func (m *message) sync(c *wkhttp.Context) {
 	}
 
 	// 获取用户缓存的最近会话
-	cacheConversations := service.ConversationManager.GetFromCache(req.UID, wkdb.ConversationTypeCMD)
-	for _, cacheConversation := range cacheConversations {
+	cacheChannels, err := service.ConversationManager.GetUserChannelsFromCache(req.UID, wkdb.ConversationTypeCMD)
+	if err != nil {
+		m.Error("获取用户缓存的最近会话失败！", zap.Error(err), zap.String("uid", req.UID))
+		c.ResponseError(errors.New("获取用户缓存的最近会话失败！"))
+		return
+	}
+	for _, cacheChannel := range cacheChannels {
 		exist := false
-		for i, conversation := range conversations {
-			if cacheConversation.ChannelId == conversation.ChannelId && cacheConversation.ChannelType == conversation.ChannelType {
-				if cacheConversation.ReadToMsgSeq > conversation.ReadToMsgSeq {
-					conversations[i].ReadToMsgSeq = cacheConversation.ReadToMsgSeq
-				}
+		for _, conversation := range conversations {
+			if cacheChannel.ChannelID == conversation.ChannelId && cacheChannel.ChannelType == conversation.ChannelType {
 				exist = true
 				break
 			}
 		}
 		if !exist {
-			conversations = append(conversations, cacheConversation)
+			conversations = append(conversations, wkdb.Conversation{
+				Uid:         req.UID,
+				ChannelId:   cacheChannel.ChannelID,
+				ChannelType: cacheChannel.ChannelType,
+				Type:        wkdb.ConversationTypeCMD,
+			})
 		}
 	}
 
@@ -457,9 +471,6 @@ func (m *message) sync(c *wkhttp.Context) {
 			c.ResponseError(err)
 			return
 		}
-		for _, delete := range deletes {
-			service.ConversationManager.DeleteFromCache(req.UID, delete.ChannelId, delete.ChannelType)
-		}
 	}
 
 	c.JSON(http.StatusOK, messageResps)
@@ -473,6 +484,12 @@ type syncRecord struct {
 }
 
 func (m *message) syncack(c *wkhttp.Context) {
+
+	if options.G.DisableCMDMessageSync {
+		c.ResponseOK()
+		return
+	}
+
 	var req syncackReq
 	bodyBytes, err := BindJSON(&req, c)
 	if err != nil {
@@ -499,16 +516,17 @@ func (m *message) syncack(c *wkhttp.Context) {
 		return
 	}
 
-	m.syncRecordLock.RLock()
-	defer m.syncRecordLock.RUnlock()
-	if len(m.syncRecordMap[req.UID]) == 0 {
+	m.syncRecordLock.Lock()
+	records := m.syncRecordMap[req.UID]
+	m.syncRecordMap[req.UID] = nil
+	m.syncRecordLock.Unlock()
+	if len(records) == 0 {
 		c.ResponseOK()
 		return
 	}
 
 	conversations := make([]wkdb.Conversation, 0)
 	deletes := make([]wkdb.Channel, 0)
-	records := m.syncRecordMap[req.UID]
 	for _, record := range records {
 		needAdd := false
 
@@ -525,18 +543,7 @@ func (m *message) syncack(c *wkhttp.Context) {
 		if err != nil {
 			if err == wkdb.ErrNotFound {
 				m.Warn("会话不存在！", zap.String("uid", req.UID), zap.String("channelId", fakeChannelId), zap.Uint8("channelType", record.channelType))
-				createdAt := time.Now()
-				updatedAt := time.Now()
-				conversation = wkdb.Conversation{
-					Uid:          req.UID,
-					ChannelId:    fakeChannelId,
-					ChannelType:  record.channelType,
-					Type:         wkdb.ConversationTypeCMD,
-					ReadToMsgSeq: record.lastMsgSeq,
-					CreatedAt:    &createdAt,
-					UpdatedAt:    &updatedAt,
-				}
-				needAdd = true
+				continue
 			} else {
 				m.Error("获取conversation失败！", zap.Error(err), zap.String("uid", req.UID), zap.String("channelId", fakeChannelId), zap.Uint8("channelType", record.channelType))
 				c.ResponseError(errors.New("获取conversation失败！"))
@@ -575,9 +582,6 @@ func (m *message) syncack(c *wkhttp.Context) {
 		}
 	}
 	if len(deletes) > 0 {
-		for _, delete := range deletes {
-			service.ConversationManager.DeleteFromCache(req.UID, delete.ChannelId, delete.ChannelType)
-		}
 		err = service.Store.DeleteConversations(req.UID, deletes)
 		if err != nil {
 			m.Error("删除最近会话失败！", zap.Error(err))

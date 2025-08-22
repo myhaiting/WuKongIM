@@ -43,6 +43,7 @@ registry:
  serviceName: "wukongim"
 webhook: # 两者配其一即可 webhook配置 用于接收消息通知事件，详情请查看文档
  mqAddr: "amqp://guest:guest@localhost:5672/"
+ queueName: "MCHAT_WK_MESSAGE_QUEUE"
 #  httpAddr: "" # webhook的http地址 通过此地址通知数据给第三方 地址为你提供的api接口地址
 #  grpcAddr: "" #  webhook的grpc地址 当前httpAddr成为瓶颈的时候可以用grpc进行推送， 如果此地址有值 则不会再调用httpAddr配置的地址,格式为 ip:port，通讯协议请查看文档
 #  msgNotifyEventPushInterval: 500ms # 消息通知事件推送间隔，默认500毫秒发起一次推送

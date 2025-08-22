@@ -11,12 +11,12 @@ RUN apt-get install -y nodejs
 RUN yarn config set registry https://registry.npm.taobao.org -g
 
 # 编译前端demo
-WORKDIR /go/release/demo
-ADD demo .
+#WORKDIR /go/release/demo
+#ADD demo .
 
 #------ 编译chatdemo ------
-WORKDIR /go/release/demo/chatdemo
-RUN yarn install && yarn build
+#WORKDIR /go/release/demo/chatdemo
+#RUN yarn install && yarn build
 
 # 编译前端 monitor
 WORKDIR /go/release/web

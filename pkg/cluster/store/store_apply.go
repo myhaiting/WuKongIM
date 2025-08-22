@@ -13,7 +13,9 @@ func (s *Store) ApplySlotLogs(slotId uint32, logs []types.Log) error {
 	for _, log := range logs {
 		err := s.applyLog(slotId, log)
 		if err != nil {
-			s.Panic("apply log err", zap.Error(err), zap.Uint64("index", log.Index), zap.ByteString("data", log.Data))
+			cmd := &CMD{}
+			cmd.Unmarshal(log.Data)
+			s.Panic("apply log err", zap.Error(err), zap.String("cmd", cmd.CmdType.String()), zap.Uint64("index", log.Index), zap.ByteString("data", log.Data))
 			return err
 		}
 	}
@@ -101,6 +103,8 @@ func (s *Store) applyLog(_ uint32, log types.Log) error {
 		return s.handleAddOrUpdateConversationsBatchIfNotExist(cmd)
 	case CMDUpdateConversationDeletedAtMsgSeq: // 更新最近会话的已删除的消息序号位置
 		return s.handleUpdateConversationDeletedAtMsgSeq(cmd)
+	case CMDSaveStreamV2: // 保存流(v2)
+		return s.handleSaveStreamV2(cmd)
 	}
 	return nil
 }
@@ -463,6 +467,14 @@ func (s *Store) handleUpdateConversationDeletedAtMsgSeq(cmd *CMD) error {
 		return err
 	}
 	return s.wdb.UpdateConversationDeletedAtMsgSeq(uid, channelId, channelType, deletedAtMsgSeq)
+}
+
+func (s *Store) handleSaveStreamV2(cmd *CMD) error {
+	stream, err := cmd.DecodeCMDStreamV2()
+	if err != nil {
+		return err
+	}
+	return s.wdb.SaveStreamV2(stream)
 }
 
 // func (s *Store) handleAddOrUpdatePlugin(cmd *CMD) error {

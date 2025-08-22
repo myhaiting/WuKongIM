@@ -74,6 +74,14 @@ type Options struct {
 		ServiceName string // 服务名称
 		IP          string // IP地址
 	}
+
+	// 客服相关配置
+	CustomerService struct {
+		VisitorsOn     bool   // 是否开启访客用户
+		VisitorsSuffix string // 访客用户的后缀(带有此后缀的用户将被认为是访客用户，访客用户登录免去token验证，但是只能给访客频道发送消息)
+
+	}
+
 	Logger struct {
 		Dir              string // 日志存储目录
 		Level            zapcore.Level
@@ -145,6 +153,14 @@ type Options struct {
 		WorkerCount        int           // 处理最近会话工作者数量
 		WorkerScanInterval time.Duration // 处理最近会话扫描间隔
 
+	}
+	StreamCache struct {
+		MaxMemorySize          int64         // 最大内存使用量 (字节)
+		MaxStreams             int           // 最大并发流数量
+		MaxChunksPerStream     int           // 每个流的最大块数量
+		StreamTimeout          time.Duration // 非活跃流超时时间
+		ChunkInactivityTimeout time.Duration // 块非活跃超时时间 (自动完成流)
+		CleanupInterval        time.Duration // 清理操作间隔
 	}
 	ManagerToken   string // 管理者的token
 	ManagerUID     string // 管理者的uid
@@ -303,6 +319,7 @@ type Options struct {
 	MigrateStartStep MigrateStep // 从那步开始迁移，默认顺序是 message,user,channel
 
 	messageIdGen *snowflake.Node // 消息ID生成器
+	chunkIdGen   *snowflake.Node // 消息chunk ID生成器
 
 	// tag相关配置
 	Tag struct {
@@ -317,6 +334,13 @@ type Options struct {
 	DisableJSONRPC bool // 是否禁用jsonrpc
 
 	DisableCMDMessageSync bool // 是否禁用命令消息同步,设置为true后，将不会同步离线的cmd消息，离线cmd消息接口都会返回空的成功
+
+	Agent struct {
+		Webhook struct {
+			HTTPAddr     string // webhook地址
+			MaxPushCount int    // 每次最多推送多少条消息
+		}
+	}
 }
 
 type MigrateStep string
@@ -348,6 +372,13 @@ func New(op ...Option) *Options {
 		SystemDeviceId:       "____device",
 		WhitelistOffOfPerson: true,
 		DeadlockCheck:        false,
+		CustomerService: struct {
+			VisitorsOn     bool
+			VisitorsSuffix string
+		}{
+			VisitorsOn:     false,
+			VisitorsSuffix: "___vstr",
+		},
 		Logger: struct {
 			Dir              string
 			Level            zapcore.Level
@@ -438,6 +469,21 @@ func New(op ...Option) *Options {
 			SavePoolSize:       100,
 			WorkerCount:        10,
 			WorkerScanInterval: time.Minute * 5,
+		},
+		StreamCache: struct {
+			MaxMemorySize          int64
+			MaxStreams             int
+			MaxChunksPerStream     int
+			StreamTimeout          time.Duration
+			ChunkInactivityTimeout time.Duration
+			CleanupInterval        time.Duration
+		}{
+			MaxMemorySize:          100 * 1024 * 1024, // 100MB
+			MaxStreams:             10000,             // 10k concurrent streams
+			MaxChunksPerStream:     1000,              // 1k chunks per stream
+			StreamTimeout:          30 * time.Minute,  // 30 minutes timeout
+			ChunkInactivityTimeout: 30 * time.Second,  // 30 seconds inactivity timeout
+			CleanupInterval:        5 * time.Minute,   // 5 minutes cleanup interval
 		},
 		DeliveryMsgPoolSize: 10240,
 		Poller: struct {
@@ -548,7 +594,7 @@ func New(op ...Option) *Options {
 			SlotReactorSubCount         int
 			PongMaxTick                 int
 		}{
-			NodeId:                      1001,
+			NodeId:                      1,
 			Addr:                        "tcp://0.0.0.0:11110",
 			ServerAddr:                  "",
 			ReqTimeout:                  time.Second * 10,
@@ -695,6 +741,19 @@ func New(op ...Option) *Options {
 		}{
 			Timeout: time.Second * 1,
 		},
+		Agent: struct {
+			Webhook struct {
+				HTTPAddr     string // webhook地址
+				MaxPushCount int    // 每次最多推送多少条消息
+			}
+		}{
+			Webhook: struct {
+				HTTPAddr     string // webhook地址
+				MaxPushCount int    // 每次最多推送多少条消息
+			}{
+				MaxPushCount: 50,
+			},
+		},
 	}
 
 	for _, o := range op {
@@ -777,6 +836,10 @@ func (o *Options) ConfigureWithViper(vp *viper.Viper) {
 	o.WSSConfig.CertFile = o.getString("wssConfig.certFile", o.WSSConfig.CertFile)
 	o.WSSConfig.KeyFile = o.getString("wssConfig.keyFile", o.WSSConfig.KeyFile)
 
+	// 客服
+	o.CustomerService.VisitorsOn = o.getBool("customerService.visitorsOn", o.CustomerService.VisitorsOn)
+	o.CustomerService.VisitorsSuffix = o.getString("customerService.visitorsSuffix", o.CustomerService.VisitorsSuffix)
+	// 频道
 	o.Channel.CacheCount = o.getInt("channel.cacheCount", o.Channel.CacheCount)
 	o.Channel.CreateIfNoExist = o.getBool("channel.createIfNoExist", o.Channel.CreateIfNoExist)
 	o.Channel.SubscriberCompressOfCount = o.getInt("channel.subscriberCompressOfCount", o.Channel.SubscriberCompressOfCount)
@@ -838,6 +901,14 @@ func (o *Options) ConfigureWithViper(vp *viper.Viper) {
 	o.Conversation.SavePoolSize = o.getInt("conversation.savePoolSize", o.Conversation.SavePoolSize)
 	o.Conversation.WorkerCount = o.getInt("conversation.workerNum", o.Conversation.WorkerCount)
 	o.Conversation.WorkerScanInterval = o.getDuration("conversation.workerScanInterval", o.Conversation.WorkerScanInterval)
+
+	// StreamCache configuration
+	o.StreamCache.MaxMemorySize = o.getInt64("streamCache.maxMemorySize", o.StreamCache.MaxMemorySize)
+	o.StreamCache.MaxStreams = o.getInt("streamCache.maxStreams", o.StreamCache.MaxStreams)
+	o.StreamCache.MaxChunksPerStream = o.getInt("streamCache.maxChunksPerStream", o.StreamCache.MaxChunksPerStream)
+	o.StreamCache.StreamTimeout = o.getDuration("streamCache.streamTimeout", o.StreamCache.StreamTimeout)
+	o.StreamCache.ChunkInactivityTimeout = o.getDuration("streamCache.chunkInactivityTimeout", o.StreamCache.ChunkInactivityTimeout)
+	o.StreamCache.CleanupInterval = o.getDuration("streamCache.cleanupInterval", o.StreamCache.CleanupInterval)
 
 	if o.WSSConfig.CertFile != "" && o.WSSConfig.KeyFile != "" {
 		certificate, err := tls.LoadX509KeyPair(o.WSSConfig.CertFile, o.WSSConfig.KeyFile)
@@ -1017,6 +1088,10 @@ func (o *Options) ConfigureWithViper(vp *viper.Viper) {
 		o.Plugin.Install = installPlugins
 	}
 
+	// =================== agent ===================
+	o.Agent.Webhook.HTTPAddr = o.getString("agent.webhook.httpAddr", o.Agent.Webhook.HTTPAddr)
+	o.Agent.Webhook.MaxPushCount = o.getInt("agent.webhook.maxPushCount", o.Agent.Webhook.MaxPushCount)
+
 	// =================== other ===================
 	deadlock.Opts.Disable = !o.DeadlockCheck
 	// deadlock.Opts.Disable = false
@@ -1176,6 +1251,12 @@ func (o *Options) configureAuth() {
 	}
 	o.messageIdGen = node
 
+	node, err = snowflake.NewNode(int64(o.Cluster.NodeId + 1000))
+	if err != nil {
+		wklog.Panic("create snowflake node failed", zap.Error(err))
+	}
+	o.chunkIdGen = node
+
 }
 
 func (o *Options) ConfigureDataDir() {
@@ -1257,6 +1338,11 @@ func (o *Options) IsSystemDevice(deviceId string) bool {
 // IsSystemUid 是否是系统uid
 func (o *Options) IsSystemUid(uid string) bool {
 	return uid == o.SystemUID
+}
+
+// IsVisitors 是否是访客
+func (o *Options) IsVisitors(uid string) bool {
+	return strings.HasSuffix(uid, o.CustomerService.VisitorsSuffix)
 }
 
 func (o *Options) ConfigFileUsed() string {
@@ -1369,6 +1455,10 @@ func (o *Options) WebhookMQOn() bool {
 	return strings.TrimSpace(o.Webhook.MQAddr) != ""
 }
 
+func (o *Options) AgentWebhookOn() bool {
+	return strings.TrimSpace(o.Agent.Webhook.HTTPAddr) != ""
+}
+
 // HasDatasource 是否有配置数据源
 func (o *Options) HasDatasource() bool {
 	return strings.TrimSpace(o.Datasource.Addr) != ""
@@ -1461,6 +1551,11 @@ func (o *Options) IsLocalNode(nodeId uint64) bool {
 func (o *Options) GenMessageId() int64 {
 
 	return o.messageIdGen.Generate().Int64()
+}
+
+// GenChunkId 生成chunkId
+func (o *Options) GenChunkId() int64 {
+	return o.chunkIdGen.Generate().Int64()
 }
 
 type Node struct {
@@ -1973,6 +2068,12 @@ func WithDbShardNum(shardNum int) Option {
 func WithDbSlotShardNum(slotShardNum int) Option {
 	return func(opts *Options) {
 		opts.Db.SlotShardNum = slotShardNum
+	}
+}
+
+func WithAgentWebhookHTTPAddr(httpAddr string) Option {
+	return func(opts *Options) {
+		opts.Agent.Webhook.HTTPAddr = httpAddr
 	}
 }
 

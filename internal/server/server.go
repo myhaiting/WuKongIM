@@ -37,6 +37,8 @@ import (
 	"github.com/WuKongIM/WuKongIM/pkg/cluster/node/types"
 	"github.com/WuKongIM/WuKongIM/pkg/cluster/store"
 	"github.com/WuKongIM/WuKongIM/pkg/trace"
+	"github.com/WuKongIM/WuKongIM/pkg/wkcache"
+	"github.com/WuKongIM/WuKongIM/pkg/wkdb"
 	"github.com/WuKongIM/WuKongIM/pkg/wklog"
 	"github.com/WuKongIM/WuKongIM/pkg/wknet"
 	"github.com/WuKongIM/WuKongIM/pkg/wkserver/proto"
@@ -61,11 +63,12 @@ type Server struct {
 	store         *store.Store  // 存储相关接口
 	engine        *wknet.Engine // 长连接引擎
 	// userReactor    *userReactor    // 用户的reactor，用于处理用户的行为逻辑
-	trace      *trace.Trace           // 监控
-	demoServer *DemoServer            // demo server
-	datasource datasource.IDatasource // 数据源
-	apiServer  *api.Server            // api服务
-	ingress    *ingress.Ingress
+	trace       *trace.Trace           // 监控
+	demoServer  *DemoServer            // demo server
+	datasource  datasource.IDatasource // 数据源
+	apiServer   *api.Server            // api服务
+	ingress     *ingress.Ingress
+	streamCache *wkcache.StreamCache // stream缓存
 
 	commonService *common.Service // 通用服务
 	// 管理者
@@ -159,6 +162,43 @@ func New(opts *options.Options) *Server {
 
 	s.webhook = webhook.New()
 	service.Webhook = s.webhook
+
+	// Initialize StreamCache with configuration values
+	s.streamCache = wkcache.NewStreamCache(&wkcache.StreamCacheOptions{
+		MaxMemorySize:          s.opts.StreamCache.MaxMemorySize,
+		MaxStreams:             s.opts.StreamCache.MaxStreams,
+		MaxChunksPerStream:     s.opts.StreamCache.MaxChunksPerStream,
+		StreamTimeout:          s.opts.StreamCache.StreamTimeout,
+		ChunkInactivityTimeout: s.opts.StreamCache.ChunkInactivityTimeout,
+		CleanupInterval:        s.opts.StreamCache.CleanupInterval,
+		OnStreamComplete: func(meta *wkcache.StreamMeta, chunks []*wkcache.MessageChunk) error {
+			// Log stream completion for monitoring
+
+			payloadLen := 0
+			for _, chunk := range chunks {
+				payloadLen += len(chunk.Payload)
+			}
+
+			payload := make([]byte, payloadLen)
+			offset := 0
+			for _, chunk := range chunks {
+				copy(payload[offset:], chunk.Payload)
+				offset += len(chunk.Payload)
+			}
+
+			return service.Store.SaveStreamV2(&wkdb.StreamV2{
+				ClientMsgNo: meta.ClientMsgNo,
+				MessageId:   meta.MessageId,
+				ChannelId:   meta.ChannelId,
+				ChannelType: meta.ChannelType,
+				FromUid:     meta.FromUid,
+				End:         1,
+				EndReason:   meta.EndReason,
+				Payload:     payload,
+			})
+		},
+	})
+	service.StreamCache = s.streamCache
 	// manager
 	s.retryManager = manager.NewRetryManager()                 // 消息重试管理
 	s.conversationManager = manager.NewConversationManager(10) // 会话管理
@@ -171,6 +211,7 @@ func New(opts *options.Options) *Server {
 	service.RetryManager = s.retryManager
 	service.TagManager = s.tagManager
 	service.SystemAccountManager = manager.NewSystemAccountManager(s.datasource) // 系统账号管理
+	service.Permission = service.NewPermissionService(ingress.NewClient())       // 权限服务
 
 	s.commonService = common.NewService()
 	service.CommonService = s.commonService
@@ -276,6 +317,9 @@ func (s *Server) Start() error {
 	if err != nil {
 		return err
 	}
+
+	// StreamCache doesn't need explicit start as it starts automatically
+	s.Debug("StreamCache initialized and ready")
 
 	s.ingress.SetRoutes()
 
@@ -423,6 +467,12 @@ func (s *Server) Stop() error {
 	s.retryManager.Stop()
 
 	s.commonService.Stop()
+
+	// Close StreamCache
+	if s.streamCache != nil {
+		s.streamCache.Close()
+		s.Debug("StreamCache closed")
+	}
 
 	if s.opts.Conversation.On {
 		s.conversationManager.Stop()

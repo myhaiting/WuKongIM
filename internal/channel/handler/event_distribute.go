@@ -141,7 +141,7 @@ func (h *Handler) distributeByTag(slotLeaderId uint64, tag *types.Tag, channelId
 				continue
 			}
 			isOnline, masterIsOnline := h.deviceOnlineStatus(uid)
-			if !masterIsOnline {
+			if !masterIsOnline && channelType != wkproto.ChannelTypeAgent { // agent不需要触发离线的webhook
 				if offlineUids == nil {
 					offlineUids = make([]string, 0, len(node.Uids))
 				}
@@ -201,6 +201,9 @@ func (h *Handler) distributeByTag(slotLeaderId uint64, tag *types.Tag, channelId
 	if len(offlineUids) > 0 {
 		offlineEvents := make([]*eventbus.Event, 0, len(events))
 		for _, event := range events {
+			if event.Frame == nil || event.Frame.GetFrameType() == wkproto.EVENT {
+				continue // 不处理event类型的事件
+			}
 			// 过滤发送者
 			filteredOfflineUids := make([]string, 0, len(offlineUids))
 			for _, offlineUid := range offlineUids {
@@ -323,8 +326,10 @@ func (h *Handler) makeChannelTag(fakeChannelId string, channelType uint8) (*type
 		}
 		u1, u2 := options.GetFromUIDAndToUIDWith(orgFakeChannelId)
 		subscribers = append(subscribers, u1, u2)
+	} else if channelType == wkproto.ChannelTypeAgent { // agent频道
+		u1, agent := options.GetUidAndAgentUIDWith(fakeChannelId)
+		subscribers = append(subscribers, u1, agent)
 	} else {
-
 		// 如果是cmd频道需要去对应的源频道获取订阅者来制作tag
 		if options.G.IsCmdChannel(fakeChannelId) {
 			var err error
@@ -370,6 +375,8 @@ func (h *Handler) getSubscribers(fakeChannelId string, channelType uint8) ([]str
 		if visitorId != "" {
 			subscribers = append(subscribers, visitorId)
 		}
+	} else if channelType == wkproto.ChannelTypeVisitors { // 如果是访客频道，那么频道id就是访客的uid，所以这里需要加访客加入到订阅者里
+		subscribers = append(subscribers, fakeChannelId)
 	}
 	return subscribers, nil
 }

@@ -2,7 +2,7 @@
 import { nextTick, onMounted, onUnmounted, ref, toRaw, toRefs, unref } from 'vue';
 import APIClient from '../services/APIClient'
 import { useRouter } from "vue-router";
-import { WKSDK, Message, MessageText, Channel, ChannelTypePerson, ChannelTypeGroup, MessageStatus, PullMode, MessageContent, MessageContentType, ConnectionInfo, Stream, StreamListener } from "wukongimjssdk";
+import { WKSDK, Message, MessageText, Channel, ChannelTypePerson, ChannelTypeGroup, MessageStatus, PullMode, MessageContent, MessageContentType, ConnectionInfo, AgentChangeListener } from "wukongimjssdk";
 import { ConnectStatus, ConnectStatusListener } from 'wukongimjssdk';
 import { SendackPacket, Setting } from 'wukongimjssdk';
 import { Buffer } from 'buffer';
@@ -13,6 +13,7 @@ import MessageUI from '../messages/Message.vue';
 import { Marked } from 'marked';
 import { markedHighlight } from "marked-highlight";
 import hljs from 'highlight.js';
+import { Agent } from 'wukongimjssdk/lib/agent';
 
 const marked = new Marked(markedHighlight({
     emptyLangClass: 'hljs',
@@ -60,9 +61,11 @@ title.value = `${uid || ""}(未连接)`
 let connectStatusListener!: ConnectStatusListener
 let messageListener!: MessageListener
 let messageStatusListener!: MessageStatusListener
-let streamListener!: StreamListener // 流监听
+let agentListener!: AgentChangeListener // 流监听
 
 onMounted(() => {
+
+    console.log("WKSDK.shared().config.apiURL--->", APIClient.shared.config.apiURL)
 
     if (!APIClient.shared.config.apiURL || APIClient.shared.config.apiURL === '') {
         WKSDK.shared().connectManager.disconnect()
@@ -87,6 +90,7 @@ onMounted(() => {
 
 // 连接IM
 const connectIM = (addr: string) => {
+    console.log("connectIM--->", addr)
     const config = WKSDK.shared().config
     if (uid && token) {
         config.uid = uid;
@@ -114,6 +118,7 @@ const connectIM = (addr: string) => {
 
     // 监听消息
     messageListener = (msg) => {
+        console.log("messageListener-->", msg)
         if (!to.value.isEqual(msg.channel)) {
             return
         }
@@ -124,31 +129,17 @@ const connectIM = (addr: string) => {
     WKSDK.shared().chatManager.addMessageListener(messageListener)
 
     // 流监听
-    streamListener = (stream: Stream) => {
-        if (!to.value.isEqual(stream.channel)) {
+    agentListener = (agent: Agent) => {
+        if (agent.channel && !to.value.isEqual(agent.channel)) {
             return
         }
         for (const message of messages.value) {
-            if (message.streamNo === stream.streamNo) {
-                let streams = message.streams;
-                if (streams && streams.length > 0) {
-                    streams.push(stream)
+            if (message.messageID === agent.messageID) {
+                if (agent.events && agent.events.length > 0) {
+                    message.content = new MessageText(agent.text)
                 } else {
-                    streams = [stream]
+                    message.content = agent.initMessage?.content
                 }
-                streams.sort((a, b) => {
-
-                    if (!a.streamId || !b.streamId) {
-                        return 0
-                    }
-                    if (a.streamId > b.streamId) {
-                        return 1
-                    } else {
-                        return -1
-                    }
-                })
-                message.streams = streams
-                message.content = streamsToMessageText(streams)
                 break
             }
             // 刷新ui
@@ -156,7 +147,7 @@ const connectIM = (addr: string) => {
             scrollBottom()
         }
     }
-    WKSDK.shared().streamManager.addStreamListener(streamListener)
+    WKSDK.shared().agentManager.addAgentChangeListener(agentListener)
 
     messageStatusListener = (ack: SendackPacket) => {
         console.log(ack)
@@ -176,7 +167,7 @@ onUnmounted(() => {
     WKSDK.shared().connectManager.removeConnectStatusListener(connectStatusListener)
     WKSDK.shared().chatManager.removeMessageListener(messageListener)
     WKSDK.shared().chatManager.removeMessageStatusListener(messageStatusListener)
-    WKSDK.shared().streamManager.removeStreamListener(streamListener)
+    WKSDK.shared().agentManager.removeAgentChangeListener(agentListener)
     WKSDK.shared().disconnect()
 })
 
@@ -216,8 +207,10 @@ const pullLast = async () => {
 
     // 渲染流消息
     for (const m of msgs) {
-        if (m.streamOn && m.streams) {
-            m.content = streamsToMessageText(m.streams)
+        if (m.setting.streamOn) {
+            if (m.streamText && m.streamText.length > 0) {
+                m.content = new MessageText(m.streamText)
+            }
         }
     }
 
@@ -247,8 +240,10 @@ const pullDown = async () => {
 
     // 渲染流消息
     for (const m of msgs) {
-        if (m.streamOn && m.streams) {
-            m.content = streamsToMessageText(m.streams)
+        if (m.setting.streamOn) {
+            if (m.streamText && m.streamText.length > 0) {
+                m.content = new MessageText(m.streamText)
+            }
         }
     }
 
@@ -312,9 +307,6 @@ const onSend = () => {
     const setting = Setting.fromUint8(0)
     if (to.value && to.value.channelID != "") {
         var content: MessageContent
-        if (streamNo.value && streamNo.value !== '') {
-            setting.streamNo = streamNo.value
-        }
         content = new MessageText(text.value)
         WKSDK.shared().chatManager.send(content, to.value, setting)
         text.value = ""
@@ -354,20 +346,6 @@ const logout = () => {
 }
 
 
-// 流转文本消息
-const streamsToMessageText = (streams: Stream[]) => {
-    let text = ""
-    for (const stream of streams) {
-        if (stream.content instanceof MessageText) {
-            const messageText = stream.content as MessageText
-            text = text + (messageText.text || "")
-        }
-    }
-    const htmlText = marked.parse(text)
-    if (htmlText) {
-        return new MessageText(htmlText as string)
-    }
-}
 
 
 const handleScroll = (e: any) => {
@@ -398,9 +376,9 @@ const onKeydown = (e: any) => {
     if (!isComposing.value) {
         hasHandled.value = false
         return
-      }
-      // 中文输入法状态下回车确认输入
-      hasHandled.value = true
+    }
+    // 中文输入法状态下回车确认输入
+    hasHandled.value = true
 }
 
 </script>

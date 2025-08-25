@@ -516,10 +516,7 @@ func (w *Webhook) sendNormalMessages(messages []wkdb.Message) error {
 		return err
 	}
 
-	if options.G.WebhookGRPCOn() {
-		return w.sendWebhookForGRPC(types.EventMsgNotify, messageData)
-	}
-	return w.sendWebhookForHttp(types.EventMsgNotify, messageData)
+	return w.sendWebhook(types.EventMsgNotify, messageData)
 }
 
 // sendAgentMessages 发送Agent消息

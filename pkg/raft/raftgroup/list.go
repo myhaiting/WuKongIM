@@ -7,119 +7,107 @@ import (
 	"go.uber.org/zap"
 )
 
-// raftNode 链表节点
-type raftNode struct {
-	key  string
-	raft IRaft
-	next *raftNode
-}
-
 type linkedList struct {
-	head *raftNode
-	tail *raftNode
-	mu   sync.RWMutex // 保护链表的并发访问
+	raftMap   map[string]IRaft // 使用 map 实现 O(1) 查找
+	raftSlice []IRaft          // 缓存的切片，用于快速遍历
+	mu        sync.RWMutex     // 保护并发访问
+	dirty     bool             // 标记切片是否需要重建
 	wklog.Log
 }
 
 // newLinkedList 创建新的链表
 func newLinkedList() *linkedList {
 	return &linkedList{
-		Log: wklog.NewWKLog("raftGroup.linkedList"),
+		raftMap:   make(map[string]IRaft),
+		raftSlice: make([]IRaft, 0, 64), // 预分配容量
+		Log:       wklog.NewWKLog("raftGroup.linkedList"),
 	}
 }
 
-// push 添加事件到链表尾部
+// push 添加 raft 实例
 func (ll *linkedList) push(raft IRaft) {
 	ll.mu.Lock()
 	defer ll.mu.Unlock()
 
-	if ll.existNoLock(raft.Key()) {
-		ll.Foucs("push: raft exist", zap.String("key", raft.Key()))
+	key := raft.Key()
+	if _, exists := ll.raftMap[key]; exists {
+		ll.Foucs("push: raft exist", zap.String("key", key))
 		return
 	}
 
-	node := &raftNode{key: raft.Key(), raft: raft}
-	if ll.tail != nil {
-		ll.tail.next = node
-	} else {
-		ll.head = node
-	}
-	ll.tail = node
+	ll.raftMap[key] = raft
+	ll.dirty = true // 标记需要重建切片
 }
 
-func (ll *linkedList) existNoLock(key string) bool {
-	for node := ll.head; node != nil; node = node.next {
-		if node.key == key {
-			return true
-		}
-	}
-	return false
-}
-
-// remove 从链表中移除事件
+// remove 从集合中移除 raft 实例
 func (ll *linkedList) remove(key string) {
 	ll.mu.Lock()
 	defer ll.mu.Unlock()
 
-	var prev *raftNode
-	for node := ll.head; node != nil; node = node.next {
-		if node.raft.Key() == key {
-			// 删除节点
-			if prev != nil {
-				prev.next = node.next
-			} else {
-				ll.head = node.next
-			}
-			// 更新尾部指针
-			if node.next == nil {
-				ll.tail = prev
-			}
-			return
-		}
-		prev = node
+	if _, exists := ll.raftMap[key]; !exists {
+		return
 	}
+
+	delete(ll.raftMap, key)
+	ll.dirty = true // 标记需要重建切片
 }
 
+// get 获取指定 key 的 raft 实例 - O(1) 复杂度
 func (ll *linkedList) get(key string) IRaft {
-	ll.mu.Lock()
-	defer ll.mu.Unlock()
+	ll.mu.RLock()
+	defer ll.mu.RUnlock()
 
-	for node := ll.head; node != nil; node = node.next {
-		if node.key == key {
-			return node.raft
-		}
-	}
-	return nil
+	return ll.raftMap[key]
 }
 
+// count 返回 raft 实例数量
 func (ll *linkedList) count() int {
+	ll.mu.RLock()
+	defer ll.mu.RUnlock()
+
+	return len(ll.raftMap)
+}
+
+// rebuildSliceNoLock 重建缓存的切片（需在持有锁的情况下调用）
+func (ll *linkedList) rebuildSliceNoLock() {
+	if !ll.dirty {
+		return
+	}
+
+	// 重用已有切片的容量
+	ll.raftSlice = ll.raftSlice[:0]
+
+	// 确保容量足够
+	if cap(ll.raftSlice) < len(ll.raftMap) {
+		ll.raftSlice = make([]IRaft, 0, len(ll.raftMap))
+	}
+
+	for _, raft := range ll.raftMap {
+		ll.raftSlice = append(ll.raftSlice, raft)
+	}
+
+	ll.dirty = false
+}
+
+// readHandlers 将所有 raft 实例追加到提供的切片中
+func (ll *linkedList) readHandlers(rafts *[]IRaft) {
+	ll.mu.Lock() // 使用写锁以便在需要时重建切片
+	ll.rebuildSliceNoLock()
+
+	// 在持有锁的情况下复制切片内容
+	*rafts = append(*rafts, ll.raftSlice...)
+	ll.mu.Unlock()
+}
+
+// all 返回所有 raft 实例的副本
+func (ll *linkedList) all() []IRaft {
 	ll.mu.Lock()
 	defer ll.mu.Unlock()
 
-	var count int
-	for node := ll.head; node != nil; node = node.next {
-		count++
-	}
-	return count
-}
-func (h *linkedList) readHandlers(rafts *[]IRaft) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	node := h.head
-	for node != nil {
-		*rafts = append(*rafts, node.raft)
-		node = node.next
-	}
-}
+	ll.rebuildSliceNoLock()
 
-func (h *linkedList) all() []IRaft {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	var rafts []IRaft
-	node := h.head
-	for node != nil {
-		rafts = append(rafts, node.raft)
-		node = node.next
-	}
-	return rafts
+	// 返回副本以避免外部修改
+	result := make([]IRaft, len(ll.raftSlice))
+	copy(result, ll.raftSlice)
+	return result
 }

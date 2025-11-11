@@ -722,7 +722,6 @@ func (w *Webhook) sendWebhook(event string, data []byte) error {
 }
 
 func (w *Webhook) sendWebhookForMQ(event string, data []byte) error {
-	w.Info("push message to mq", zap.String("event", event), zap.String("queueName", w.queueName))
 	if err := w.publisher.Publish(publisher.Message{
 		Key: w.queueName,
 		Publishing: amqp.Publishing{

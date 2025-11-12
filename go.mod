@@ -40,16 +40,16 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.28.0
 	go.uber.org/automaxprocs v1.5.3
 	go.uber.org/zap v1.27.0
-	golang.org/x/crypto v0.26.0
-	golang.org/x/sync v0.8.0
-	google.golang.org/grpc v1.65.0
-	google.golang.org/protobuf v1.36.3
+	golang.org/x/crypto v0.31.0
+	golang.org/x/sync v0.10.0
+	google.golang.org/grpc v1.67.3
+	google.golang.org/protobuf v1.36.5
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
 require (
 	github.com/WuKongIM/wklog v0.0.0-20250123094253-32484fb54d05 // indirect
-	github.com/aliyun/alibaba-cloud-sdk-go v1.61.1704 // indirect
+	github.com/aliyun/alibaba-cloud-sdk-go v1.61.1800 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/bytedance/gopkg v0.1.1 // indirect
 	github.com/bytedance/sonic v1.13.2 // indirect
@@ -60,7 +60,7 @@ require (
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.8 // indirect
 	github.com/makasim/amqpextra v1.2.1 // indirect
-	github.com/nacos-group/nacos-sdk-go/v2 v2.2.0 // indirect
+	github.com/nacos-group/nacos-sdk-go/v2 v2.3.5 // indirect
 	github.com/nyaruka/phonenumbers v1.0.55 // indirect
 	github.com/rabbitmq/amqp091-go v1.5.0 // indirect
 	github.com/tidwall/gjson v1.14.4 // indirect
@@ -76,7 +76,7 @@ require (
 	cloud.google.com/go v0.115.1 // indirect
 	cloud.google.com/go/auth v0.9.0 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.4 // indirect
-	cloud.google.com/go/compute/metadata v0.5.0 // indirect
+	cloud.google.com/go/compute/metadata v0.5.2 // indirect
 	cloud.google.com/go/iam v1.2.0 // indirect
 	cloud.google.com/go/pubsub v1.42.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.13.0 // indirect
@@ -287,9 +287,9 @@ require (
 	go4.org/netipx v0.0.0-20230125063823-8449b0a6169f // indirect
 	golang.org/x/exp v0.0.0-20240325151524-a685a6edb6d8 // indirect
 	golang.org/x/mod v0.19.0 // indirect
-	golang.org/x/net v0.28.0 // indirect
+	golang.org/x/net v0.33.0 // indirect
 	golang.org/x/oauth2 v0.23.0 // indirect
-	golang.org/x/term v0.23.0 // indirect
+	golang.org/x/term v0.27.0 // indirect
 	golang.org/x/time v0.6.0 // indirect
 	golang.org/x/tools v0.23.0 // indirect
 	google.golang.org/api v0.193.0 // indirect
@@ -329,8 +329,8 @@ require (
 	github.com/subosito/gotenv v1.4.2 // indirect
 	go.uber.org/atomic v1.11.0
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/sys v0.25.0
-	golang.org/x/text v0.17.0 // indirect
+	golang.org/x/sys v0.28.0
+	golang.org/x/text v0.21.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1

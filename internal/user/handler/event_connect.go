@@ -69,6 +69,8 @@ func (h *Handler) handleConnect(event *eventbus.Event) (wkproto.ReasonCode, *wkp
 		uid           = connectPacket.UID
 	)
 
+	h.Info("[DEBUG] on connect", zap.String("uid", uid), zap.Any("remoteAddr", conn.RemoteAddr))
+
 	// -------------------- uid limiter --------------------
 	allowed, err := options.Limiter.AllowUID(context.Background(), uid)
 	if err != nil {

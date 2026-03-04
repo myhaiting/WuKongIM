@@ -11,11 +11,24 @@ import (
 
 	"github.com/WuKongIM/WuKongIM/pkg/wkutil"
 	"github.com/WuKongIM/crypto/tls"
-	"go.uber.org/zap"
-
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
+	"github.com/realclientip/realclientip-go"
+	"go.uber.org/zap"
 )
+
+var realIPChain realclientip.ChainStrategy
+
+func init() {
+	strategy1, _ := realclientip.NewSingleIPHeaderStrategy("CF-Connecting-IP")
+	strategy2, _ := realclientip.NewSingleIPHeaderStrategy("True-Client-IP")
+	strategy3, _ := realclientip.NewSingleIPHeaderStrategy("Eo-Connecting-Ip")
+	strategy4, _ := realclientip.NewSingleIPHeaderStrategy("Ali-Cdn-Real-Ip")
+	strategy5, _ := realclientip.NewLeftmostNonPrivateStrategy("X-Forwarded-For")
+	strategy6, _ := realclientip.NewSingleIPHeaderStrategy("X-Real-IP")
+
+	realIPChain = realclientip.NewChainStrategy(strategy1, strategy2, strategy3, strategy4, strategy5, strategy6)
+}
 
 func CreateWSConn(id int64, connFd NetFd, localAddr, remoteAddr net.Addr, eg *Engine, reactorSub *ReactorSub) (Conn, error) {
 	defaultConn := GetDefaultConn(id, connFd, localAddr, remoteAddr, eg, reactorSub)
@@ -37,6 +50,7 @@ type WSConn struct {
 }
 
 func NewWSConn(d *DefaultConn) *WSConn {
+
 	w := &WSConn{
 		DefaultConn:      d,
 		tmpInboundBuffer: d.eg.eventHandler.OnNewInboundConn(d, d.eg),
@@ -184,20 +198,9 @@ func (w *WSConn) upgrade() error {
 		return err
 	}
 
-	w.Info("[DEBUG]ws headers", zap.Any("headers", req.Header))
-
-	realIp := w.getRealIp(req) // 获取真实ip
-	realPortStr := req.Header.Get("X-Real-Port")
+	// 获取真实ip
+	realIp, realPort := w.getRealIp(req)
 	if strings.TrimSpace(realIp) != "" {
-		realPort := 0
-		if strings.TrimSpace(realPortStr) != "" {
-			realPort = wkutil.ParseInt(realPortStr)
-		} else {
-			if w.remoteAddr != nil {
-				realPort = w.remoteAddr.(*net.TCPAddr).Port
-			}
-		}
-		w.Info("[DEBUG]real ip", zap.String("ip", realIp), zap.Int("port", realPort))
 		w.SetRemoteAddr(&net.TCPAddr{
 			IP:   net.ParseIP(realIp),
 			Port: realPort,
@@ -214,12 +217,19 @@ func (w *WSConn) upgrade() error {
 	return nil
 }
 
-func (w *WSConn) getRealIp(r *http.Request) string {
-	realIp := r.Header.Get("X-Forwarded-For")
-	if strings.TrimSpace(realIp) == "" {
-		realIp = r.Header.Get("X-Real-IP")
+// 获取真实ip
+func (w *WSConn) getRealIp(r *http.Request) (string, int) {
+	realIp := realIPChain.ClientIP(r.Header, "")
+	realPort := 0
+	realPortStr := r.Header.Get("X-Real-Port")
+	if strings.TrimSpace(realPortStr) != "" {
+		realPort = wkutil.ParseInt(realPortStr)
+	} else {
+		if w.remoteAddr != nil {
+			realPort = w.remoteAddr.(*net.TCPAddr).Port
+		}
 	}
-	return realIp
+	return realIp, realPort
 }
 
 func (w *WSConn) parseHttpRequest(data []byte) (*http.Request, error) {

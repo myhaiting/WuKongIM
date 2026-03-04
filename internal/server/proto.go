@@ -276,11 +276,9 @@ func (s *Server) handleUnauthenticatedConn(conn wknet.Conn, buff []byte, isJson 
 		ProtoVersion: connectPacket.Version,
 		Uptime:       fasttime.UnixTimestamp(),
 		IsJsonRpc:    isJson,
+		RemoteAddr:   conn.RemoteAddr().String(),
 	}
 	conn.SetContext(connCtx)
-
-	s.Info("[DEBUG] client connected", zap.String("uid", connectPacket.UID), zap.String("IP", conn.RemoteAddr().String()))
-
 	conn.SetMaxIdle(time.Second * 4)
 
 	eventbus.User.Connect(reqId, connCtx, connectPacket)

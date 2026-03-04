@@ -50,8 +50,8 @@ type Conn struct {
 
 	// 不参与编码
 	LastActive uint64 // 最后一次活动时间单位秒
-
-	IsJsonRpc bool // 是否是jsonrpc连接
+	RemoteAddr string
+	IsJsonRpc  bool // 是否是jsonrpc连接
 }
 
 func (c *Conn) Encode() ([]byte, error) {

@@ -69,10 +69,24 @@ func (h *Handler) handleConnect(event *eventbus.Event) (wkproto.ReasonCode, *wkp
 		uid           = connectPacket.UID
 	)
 
-	h.Info("[DEBUG] on connect", zap.String("uid", uid), zap.Any("remoteAddr", conn.RemoteAddr))
+	remoteIP := conn.RemoteAddr
+
+	h.Info("[DEBUG] on connect", zap.String("uid", uid), zap.Any("remoteAddr", remoteIP))
+	// -------------------- ip limiter --------------------
+	allowed, err := options.Limiter.AllowIP(context.Background(), remoteIP)
+	if err != nil {
+		h.Warn("connect rate limit ip check failed, fallback allow", zap.Error(err), zap.String("uid", uid), zap.String("remoteIP", remoteIP))
+	}
+	if !allowed {
+		h.Warn("connect rejected by ip rate limit", zap.String("uid", uid), zap.String("remoteIP", remoteIP))
+		return wkproto.ReasonRateLimit, &wkproto.ConnackPacket{
+			ReasonCode: wkproto.ReasonRateLimit,
+			NodeId:     options.G.Cluster.NodeId,
+		}, nil
+	}
 
 	// -------------------- uid limiter --------------------
-	allowed, err := options.Limiter.AllowUID(context.Background(), uid)
+	allowed, err = options.Limiter.AllowUID(context.Background(), uid)
 	if err != nil {
 		h.Warn("connect rate limit uid check failed, fallback allow", zap.Error(err), zap.String("uid", uid))
 	}

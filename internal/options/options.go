@@ -476,7 +476,7 @@ func New(op ...Option) *Options {
 				KeyPrefix string
 			}{
 				On:        false,
-				PerSecond: 30,
+				PerSecond: 1,
 				KeyPrefix: "wukongim:ratelimit:connect:uid",
 			},
 		},

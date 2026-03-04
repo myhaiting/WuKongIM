@@ -686,9 +686,6 @@ func (s *Server) onConnect(conn wknet.Conn) error {
 	s.trace.Metrics.App().ConnCountAdd(1)
 
 	service.ConnManager.AddConn(conn)
-
-	s.Info("Client connected", zap.Int64("id", conn.ID()),
-		zap.String("client", conn.RemoteAddr().String()))
 	return nil
 }
 

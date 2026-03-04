@@ -31,6 +31,7 @@ import (
 )
 
 var G *Options
+var Limiter *ConnectRateLimiter
 
 type Mode string
 
@@ -178,6 +179,26 @@ type Options struct {
 	ConnIdleTime    time.Duration // 连接空闲时间 超过此时间没数据传输将关闭
 	TimingWheelTick time.Duration // The time-round training interval must be 1ms or more
 	TimingWheelSize int64         // Time wheel size
+
+	ConnectRateLimit struct {
+		Redis struct {
+			Addr     string // redis地址，例如：127.0.0.1:6379
+			Username string
+			Password string
+			DB       int
+		}
+		IP struct {
+			On        bool     // 是否开启IP限流
+			PerSecond int      // 每秒允许连接次数
+			Whitelist []string // IP白名单，支持IP和CIDR
+			KeyPrefix string   // redis key前缀
+		}
+		UID struct {
+			On        bool   // 是否开启UID限流
+			PerSecond int    // 每秒允许连接次数
+			KeyPrefix string // redis key前缀
+		}
+	}
 
 	UserMsgQueueMaxSize int // 用户消息队列最大大小，超过此大小此用户将被限速，0为不限制
 
@@ -411,6 +432,54 @@ func New(op ...Option) *Options {
 		WSSAddr:             "",
 		ConnIdleTime:        time.Minute * 3,
 		UserMsgQueueMaxSize: 0,
+		ConnectRateLimit: struct {
+			Redis struct {
+				Addr     string
+				Username string
+				Password string
+				DB       int
+			}
+			IP struct {
+				On        bool
+				PerSecond int
+				Whitelist []string
+				KeyPrefix string
+			}
+			UID struct {
+				On        bool
+				PerSecond int
+				KeyPrefix string
+			}
+		}{
+			Redis: struct {
+				Addr     string
+				Username string
+				Password string
+				DB       int
+			}{
+				Addr: "127.0.0.1:6379",
+				DB:   0,
+			},
+			IP: struct {
+				On        bool
+				PerSecond int
+				Whitelist []string
+				KeyPrefix string
+			}{
+				On:        false,
+				PerSecond: 30,
+				KeyPrefix: "wukongim:ratelimit:connect:ip",
+			},
+			UID: struct {
+				On        bool
+				PerSecond int
+				KeyPrefix string
+			}{
+				On:        false,
+				PerSecond: 30,
+				KeyPrefix: "wukongim:ratelimit:connect:uid",
+			},
+		},
 		TmpChannel: struct {
 			Suffix     string
 			CacheCount int
@@ -850,6 +919,23 @@ func (o *Options) ConfigureWithViper(vp *viper.Viper) {
 	o.TimingWheelSize = o.getInt64("timingWheelSize", o.TimingWheelSize)
 
 	o.UserMsgQueueMaxSize = o.getInt("userMsgQueueMaxSize", o.UserMsgQueueMaxSize)
+
+	o.ConnectRateLimit.Redis.Addr = o.getString("connectRateLimit.redis.addr", o.ConnectRateLimit.Redis.Addr)
+	o.ConnectRateLimit.Redis.Username = o.getString("connectRateLimit.redis.username", o.ConnectRateLimit.Redis.Username)
+	o.ConnectRateLimit.Redis.Password = o.getString("connectRateLimit.redis.password", o.ConnectRateLimit.Redis.Password)
+	o.ConnectRateLimit.Redis.DB = o.getInt("connectRateLimit.redis.db", o.ConnectRateLimit.Redis.DB)
+
+	o.ConnectRateLimit.IP.On = o.getBool("connectRateLimit.ip.on", o.ConnectRateLimit.IP.On)
+	o.ConnectRateLimit.IP.PerSecond = o.getInt("connectRateLimit.ip.perSecond", o.ConnectRateLimit.IP.PerSecond)
+	o.ConnectRateLimit.IP.KeyPrefix = o.getString("connectRateLimit.ip.keyPrefix", o.ConnectRateLimit.IP.KeyPrefix)
+	ipWhitelist := o.getStringSlice("connectRateLimit.ip.whitelist")
+	if len(ipWhitelist) > 0 {
+		o.ConnectRateLimit.IP.Whitelist = ipWhitelist
+	}
+
+	o.ConnectRateLimit.UID.On = o.getBool("connectRateLimit.uid.on", o.ConnectRateLimit.UID.On)
+	o.ConnectRateLimit.UID.PerSecond = o.getInt("connectRateLimit.uid.perSecond", o.ConnectRateLimit.UID.PerSecond)
+	o.ConnectRateLimit.UID.KeyPrefix = o.getString("connectRateLimit.uid.keyPrefix", o.ConnectRateLimit.UID.KeyPrefix)
 
 	o.TokenAuthOn = o.getBool("tokenAuthOn", o.TokenAuthOn)
 

@@ -8,11 +8,12 @@ require (
 	github.com/WuKongIM/crypto v0.0.0-20240416072338-b872b70b395f
 	github.com/WuKongIM/wkrpc v0.0.0-20250312122115-5e44de72d2c8
 	github.com/bwmarrin/snowflake v0.3.0
-	github.com/cloudwego/hertz v0.10.1
+	github.com/cloudwego/hertz v0.10.4
 	github.com/cockroachdb/pebble v1.0.0
 	github.com/gin-contrib/gzip v0.0.6
 	github.com/gin-contrib/pprof v1.4.0
 	github.com/gin-gonic/gin v1.8.2
+	github.com/go-redis/redis_rate/v10 v10.0.1
 	github.com/gobwas/ws v1.2.1
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/google/uuid v1.6.0
@@ -30,6 +31,7 @@ require (
 	github.com/prometheus/client_golang v1.19.1
 	github.com/prometheus/common v0.55.0
 	github.com/rabbitmq/amqp091-go v1.5.0
+	github.com/redis/go-redis/v9 v9.0.2
 	github.com/sasha-s/go-deadlock v0.3.1
 	github.com/sendgrid/rest v2.6.9+incompatible
 	github.com/stretchr/testify v1.10.0
@@ -73,18 +75,17 @@ require (
 	github.com/aliyun/aliyun-secretsmanager-client-go v1.1.5 // indirect
 	github.com/aliyun/credentials-go v1.4.3 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
-	github.com/bytedance/gopkg v0.1.1 // indirect
-	github.com/bytedance/sonic v1.13.2 // indirect
-	github.com/bytedance/sonic/loader v0.2.4 // indirect
+	github.com/bytedance/gopkg v0.1.3 // indirect
+	github.com/bytedance/sonic v1.15.0 // indirect
+	github.com/bytedance/sonic/loader v0.5.0 // indirect
 	github.com/clbanning/mxj/v2 v2.5.5 // indirect
-	github.com/cloudwego/base64x v0.1.5 // indirect
+	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/cloudwego/gopkg v0.1.4 // indirect
-	github.com/cloudwego/netpoll v0.7.0 // indirect
+	github.com/cloudwego/netpoll v0.7.2 // indirect
 	github.com/deckarep/golang-set v1.7.1 // indirect
 	github.com/golang/mock v1.6.0 // indirect
-	github.com/klauspost/cpuid/v2 v2.2.8 // indirect
+	github.com/klauspost/cpuid/v2 v2.2.9 // indirect
 	github.com/nacos-group/nacos-sdk-go/v2 v2.3.5 // indirect
-	github.com/nyaruka/phonenumbers v1.0.55 // indirect
 	github.com/orcaman/concurrent-map v0.0.0-20210501183033-44dafcb38ecc // indirect
 	github.com/tidwall/gjson v1.14.4 // indirect
 	github.com/tidwall/match v1.1.1 // indirect

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"time"
@@ -67,6 +68,20 @@ func (h *Handler) handleConnect(event *eventbus.Event) (wkproto.ReasonCode, *wkp
 		devceLevel    wkproto.DeviceLevel
 		uid           = connectPacket.UID
 	)
+
+	// -------------------- uid limiter --------------------
+	allowed, err := options.Limiter.AllowUID(context.Background(), uid)
+	if err != nil {
+		h.Warn("connect rate limit uid check failed, fallback allow", zap.Error(err), zap.String("uid", uid))
+	}
+	if !allowed {
+		h.Warn("connect rejected by uid rate limit", zap.String("uid", uid))
+		return wkproto.ReasonRateLimit, &wkproto.ConnackPacket{
+			ReasonCode: wkproto.ReasonRateLimit,
+			NodeId:     options.G.Cluster.NodeId,
+		}, nil
+	}
+
 	// -------------------- token verify --------------------
 	if connectPacket.UID == options.G.ManagerUID {
 		if options.G.ManagerTokenOn && connectPacket.Token != options.G.ManagerToken {

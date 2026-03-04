@@ -3,11 +3,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"github.com/WuKongIM/WuKongIM/internal/datasource"
-	"github.com/cloudwego/hertz/pkg/app/server/registry"
-	"github.com/cloudwego/hertz/pkg/common/hlog"
-	"github.com/cloudwego/hertz/pkg/common/utils"
-	"github.com/hertz-contrib/registry/nacos/v2"
 	"math/rand"
 	"net"
 	"os"
@@ -16,6 +11,12 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/WuKongIM/WuKongIM/internal/datasource"
+	"github.com/cloudwego/hertz/pkg/app/server/registry"
+	"github.com/cloudwego/hertz/pkg/common/hlog"
+	"github.com/cloudwego/hertz/pkg/common/utils"
+	"github.com/hertz-contrib/registry/nacos/v2"
 
 	"github.com/WuKongIM/WuKongIM/internal/api"
 	channelevent "github.com/WuKongIM/WuKongIM/internal/channel/event"
@@ -99,6 +100,7 @@ func New(opts *options.Options) *Server {
 	now := time.Now().UTC()
 
 	options.G = opts
+	options.Limiter = options.NewConnectRateLimiter(opts)
 
 	s := &Server{
 		opts:  opts,
@@ -685,6 +687,8 @@ func (s *Server) onConnect(conn wknet.Conn) error {
 
 	service.ConnManager.AddConn(conn)
 
+	s.Info("Client connected", zap.Int64("id", conn.ID()),
+		zap.String("client", conn.RemoteAddr().String()))
 	return nil
 }
 

@@ -71,7 +71,8 @@ func (h *Handler) handleConnect(event *eventbus.Event) (wkproto.ReasonCode, *wkp
 
 	remoteIP := conn.RemoteAddr
 
-	h.Info("[DEBUG] on connect", zap.String("uid", uid), zap.Any("remoteAddr", remoteIP))
+	h.Debug("On connect", zap.String("uid", uid), zap.Any("remoteAddr", remoteIP))
+
 	// -------------------- ip limiter --------------------
 	allowed, err := options.Limiter.AllowIP(context.Background(), remoteIP)
 	if err != nil {

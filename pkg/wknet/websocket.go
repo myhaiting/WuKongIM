@@ -197,6 +197,7 @@ func (w *WSConn) upgrade() error {
 				realPort = w.remoteAddr.(*net.TCPAddr).Port
 			}
 		}
+		w.Info("[DEBUG]real ip", zap.String("ip", realIp), zap.Int("port", realPort))
 		w.SetRemoteAddr(&net.TCPAddr{
 			IP:   net.ParseIP(realIp),
 			Port: realPort,

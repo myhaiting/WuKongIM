@@ -184,6 +184,8 @@ func (w *WSConn) upgrade() error {
 		return err
 	}
 
+	w.Info("[DEBUG]ws headers", zap.Any("headers", req.Header))
+
 	realIp := w.getRealIp(req) // 获取真实ip
 	realPortStr := req.Header.Get("X-Real-Port")
 	if strings.TrimSpace(realIp) != "" {

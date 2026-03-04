@@ -6,13 +6,12 @@ import (
 	"time"
 
 	"github.com/RussellLuo/timingwheel"
-	"github.com/sasha-s/go-deadlock"
 	"go.uber.org/atomic"
 )
 
 type Engine struct {
 	connMatrix      *connMatrix              // 在线连接
-	connsUnixLock   deadlock.RWMutex         // 在线连接锁
+	connsUnixLock   sync.RWMutex             // 在线连接锁
 	options         *Options                 // 配置
 	eventHandler    *EventHandler            // 事件
 	reactorMain     *ReactorMain             // 主reactor
@@ -74,8 +73,9 @@ func (e *Engine) RemoveConn(conn Conn) {
 
 func (e *Engine) GetConn(fd int) Conn {
 	e.connsUnixLock.RLock()
-	defer e.connsUnixLock.RUnlock()
-	return e.connMatrix.getConn(fd)
+	c := e.connMatrix.getConn(fd)
+	e.connsUnixLock.RUnlock()
+	return c
 }
 
 func (e *Engine) GetAllConn() []Conn {
